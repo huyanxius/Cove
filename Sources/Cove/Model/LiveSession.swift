@@ -3,7 +3,7 @@ import CoveCore
 import Observation
 import SwiftTerm
 
-/// 一个打开着的会话：终端视图、里面的 claude 进程，以及从 JSONL 推断出的实时状态。
+/// 一个打开着的会话：终端视图、里面的 CLI 进程，以及（claude 才有的）从 JSONL 推断出的实时状态和用量。
 ///
 /// 终端视图由它持有而不是由 SwiftUI 持有，所以切到别的会话时视图只是被摘下来，
 /// 进程照跑；切回来再挂上去，滚动位置和屏幕内容都还在。
@@ -17,6 +17,7 @@ final class LiveSession: Identifiable {
 
     let id: String
     let cwd: String
+    let cli: CLIKind
     var title: String
     let startedAt = Date()
 
@@ -25,6 +26,8 @@ final class LiveSession: Identifiable {
     }
     /// 每个改动文件相对 HEAD 的增删行数，键是绝对路径。随 Agent 的编辑刷新。
     private(set) var fileDeltas: [String: LineDelta] = [:]
+    /// 最近一次 statusLine 落盘的用量；只有 claude 会话有。
+    private(set) var usage: UsageSnapshot?
     private(set) var isRunning = false
     private(set) var exitCode: Int32?
 
@@ -44,9 +47,10 @@ final class LiveSession: Identifiable {
     /// 所以之后切换外观不改它——新开或恢复的会话才会跟上。
     @ObservationIgnored let tone: TerminalTone
 
-    init(id: String, cwd: String, title: String, mode: ClaudeLaunch.Mode, indexer: SessionIndexer) {
+    init(id: String, cwd: String, title: String, mode: ClaudeLaunch.Mode, cli: CLIKind = .claude, indexer: SessionIndexer) {
         self.id = id
         self.cwd = cwd
+        self.cli = cli
         self.title = title
         self.mode = mode
         terminal = LocalProcessTerminalView(frame: CGRect(x: 0, y: 0, width: 800, height: 500))
@@ -60,6 +64,7 @@ final class LiveSession: Identifiable {
 
         let isResume: Bool
         if case .resume = mode { isResume = true } else { isResume = false }
+        guard cli == .claude else { return }
         tail = JSONLTail(settleAfterFirstRead: isResume, locate: { [id] in indexer.transcriptURL(for: id) }) { [weak self] tracker in
             DispatchQueue.main.async { self?.tracker = tracker }
         }
@@ -67,9 +72,19 @@ final class LiveSession: Identifiable {
 
     func start() {
         let shell = Self.loginShell()
-        let command = ClaudeLaunch.shellCommand(shell: shell, claudeArguments: ClaudeLaunch.claudeArguments(mode, theme: tone == .dark ? "dark" : "light"))
         var environment = Terminal.getEnvironmentVariables(termName: "xterm-256color", trueColor: true)
         environment.append("SHELL=\(shell)")
+        let command: (executable: String, args: [String])
+        if cli == .claude {
+            let settings = ClaudeLaunch.settingsJSON(theme: tone == .dark ? "dark" : "light",
+                                                     statusLineCommand: UsageRelay.command)
+            command = ClaudeLaunch.shellCommand(shell: shell, claudeArguments: ClaudeLaunch.claudeArguments(mode, settingsJSON: settings))
+            environment.append("COVE_SESSION_ID=\(id)")
+            if let user = UsageRelay.userStatusLineCommand() { environment.append("COVE_USER_STATUSLINE=\(user)") }
+            startUsagePolling()
+        } else {
+            command = ClaudeLaunch.shellCommand(shell: shell, program: cli.executable, arguments: cli.arguments(resume: nil))
+        }
         terminal.startProcess(executable: command.executable, args: command.args,
                               environment: environment, execName: nil, currentDirectory: cwd)
         tail?.start()
@@ -78,7 +93,7 @@ final class LiveSession: Identifiable {
         guard terminal.process?.running == true else {
             isRunning = false
             exitCode = nil
-            terminal.feed(text: "Cove 无法在 \(cwd) 启动 claude。\r\n"
+            terminal.feed(text: "Cove 无法在 \(cwd) 启动 \(cli.executable)。\r\n"
                 + "如果它在「桌面」「文稿」或「下载」里，请到 系统设置 → 隐私与安全性 → 完整磁盘取用 里允许 Cove，然后重开这个会话。\r\n")
             return
         }
@@ -111,7 +126,21 @@ final class LiveSession: Identifiable {
         if activeTab == .diff(path) { activeTab = .terminal }
     }
 
+    @ObservationIgnored private var usageTask: Task<Void, Never>?
+
+    private func startUsagePolling() {
+        usageTask?.cancel()
+        usageTask = Task { [weak self, id] in
+            while !Task.isCancelled {
+                let snapshot = await Task.detached { UsageRelay.snapshot(for: id) }.value
+                if let snapshot, snapshot != self?.usage { self?.usage = snapshot }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
     func terminate() {
+        usageTask?.cancel()
         tail?.stop()
         if isRunning { terminal.terminate() }
     }

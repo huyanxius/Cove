@@ -32,6 +32,12 @@ final class AppModel {
 
     var selectedLive: LiveSession? { selection.flatMap { live[$0] } }
 
+    /// 新会话默认用哪个 CLI；设置页里改。
+    var defaultCLI: CLIKind {
+        get { CLIKind(rawValue: UserDefaults.standard.string(forKey: "defaultCLI") ?? "") ?? .claude }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "defaultCLI") }
+    }
+
     /// `open -a Cove --args --new <dir>`：启动即在该目录新建会话，给脚本和以后的 `cove` 命令用。
     func handleLaunchArguments(_ arguments: [String] = CommandLine.arguments) {
         guard let flag = arguments.firstIndex(of: "--new"), arguments.indices.contains(flag + 1) else { return }
@@ -62,8 +68,8 @@ final class AppModel {
         }
     }
 
-    /// 侧栏数据：已落盘的会话 + 刚新建、还没写出 JSONL 的会话。
-    var groups: [ProjectGroup] {
+    /// 侧栏数据：已落盘的会话 + 刚新建、还没写出 JSONL 的会话（含 codex/agy 这类只在内存里的）。
+    private var allSummaries: [SessionSummary] {
         var all = sessions
         let known = Set(all.map(\.id))
         for session in live.values where !known.contains(session.id) {
@@ -74,7 +80,18 @@ final class AppModel {
         if !query.isEmpty {
             all = all.filter { $0.title.localizedCaseInsensitiveContains(query) || ($0.cwd ?? "").localizedCaseInsensitiveContains(query) }
         }
-        all.sort { $0.lastActivity > $1.lastActivity }
+        return all.sorted { $0.lastActivity > $1.lastActivity }
+    }
+
+    /// 「临时」分区：放在 Cove 临时目录里的会话，按时间倒序，不按文件夹分组。
+    var scratchSessions: [SessionSummary] {
+        allSummaries.filter { ScratchSpace.isScratch(cwd: $0.cwd) }
+    }
+
+    /// 「项目」分区：按文件夹分组的正式会话。
+    var groups: [ProjectGroup] {
+        let all = allSummaries.filter { !ScratchSpace.isScratch(cwd: $0.cwd) }
+        let query = searchText.trimmingCharacters(in: .whitespaces)
 
         var order: [String] = []
         var buckets: [String: [SessionSummary]] = [:]
@@ -109,14 +126,28 @@ final class AppModel {
         session.focusRequest += 1
     }
 
-    func newSession(in directory: URL) {
+    func newSession(in directory: URL, cli: CLIKind? = nil) {
+        let cli = cli ?? defaultCLI
         let id = UUID().uuidString.lowercased()
-        let session = LiveSession(id: id, cwd: directory.resolvingSymlinksInPath().path, title: "New session",
-                                  mode: .new(sessionID: id), indexer: indexer)
+        let title = cli == .claude ? "New session" : "\(cli.displayName) · \(directory.lastPathComponent)"
+        let session = LiveSession(id: id, cwd: directory.resolvingSymlinksInPath().path, title: title,
+                                  mode: .new(sessionID: id), cli: cli, indexer: indexer)
         live[id] = session
         session.start()
         selection = id
         session.focusRequest += 1
+    }
+
+    /// 临时会话：在 Cove 的临时目录下新建一个以时间命名的空文件夹，立即开会话。
+    func newScratchSession(cli: CLIKind? = nil) {
+        guard let folder = try? ScratchSpace.makeFolder() else { return }
+        newSession(in: folder, cli: cli)
+    }
+
+    /// 在输入框里切换 CLI：同一个文件夹里用另一个 CLI 开新会话（上下文不会带过去）。
+    func switchCLI(of session: LiveSession, to cli: CLIKind) {
+        guard cli != session.cli else { return }
+        newSession(in: URL(fileURLWithPath: session.cwd), cli: cli)
     }
 
     func chooseDirectoryForNewSession() {
@@ -134,7 +165,8 @@ final class AppModel {
     func restart(_ id: String) {
         guard let old = live.removeValue(forKey: id) else { return }
         old.terminate()
-        let session = LiveSession(id: id, cwd: old.cwd, title: old.title, mode: .resume(sessionID: id), indexer: indexer)
+        let mode: ClaudeLaunch.Mode = old.cli == .claude ? .resume(sessionID: id) : .new(sessionID: id)
+        let session = LiveSession(id: id, cwd: old.cwd, title: old.title, mode: mode, cli: old.cli, indexer: indexer)
         live[id] = session
         session.start()
         session.focusRequest += 1
@@ -149,5 +181,10 @@ final class AppModel {
     }
 
     var totalSessionCount: Int { sessions.count }
+
+    /// 所有打开着的 claude 会话里最新的一份用量：5h/7d 额度是账号级的，取最近更新的即可。
+    var latestUsage: UsageSnapshot? {
+        selectedLive?.usage ?? live.values.compactMap(\.usage).first
+    }
     var projectCount: Int { Set(sessions.compactMap(\.cwd)).count }
 }
