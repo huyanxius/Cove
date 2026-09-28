@@ -38,16 +38,19 @@ public enum KeyRoute: Equatable, Sendable {
 /// 都交给终端；一旦输入框里有字，所有键都归输入框，保证编辑手感和普通文本框一致。
 /// 数字和字母永远不透传——否则在空输入框里打字的第一个字母会被 claude 吃掉。
 public enum KeyRouter {
-    public static func route(_ stroke: KeyStroke, composerIsEmpty: Bool) -> KeyRoute {
+    /// `applicationCursor` 是终端当前的 DECCKM 状态：程序打开它之后，方向键要发
+    /// `ESC O A` 而不是 `ESC [ A`，发错了在某些 TUI 里就是一串乱码。
+    public static func route(_ stroke: KeyStroke, composerIsEmpty: Bool, applicationCursor: Bool = false) -> KeyRoute {
         if stroke.modifiers.contains(.command) || !composerIsEmpty { return .composer }
 
         let escape: UInt8 = 0x1B
         let csi: [UInt8] = [escape, 0x5B]
+        let arrow: [UInt8] = applicationCursor ? [escape, 0x4F] : csi
         switch stroke.key {
-        case .up: return .terminal(csi + [0x41])
-        case .down: return .terminal(csi + [0x42])
-        case .right: return .terminal(csi + [0x43])
-        case .left: return .terminal(csi + [0x44])
+        case .up: return .terminal(arrow + [0x41])
+        case .down: return .terminal(arrow + [0x42])
+        case .right: return .terminal(arrow + [0x43])
+        case .left: return .terminal(arrow + [0x44])
         case .escape: return .terminal([escape])
         case .tab: return .terminal(stroke.modifiers.contains(.shift) ? csi + [0x5A] : [0x09])
         case .enter:

@@ -40,6 +40,13 @@ import Testing
         #expect(route(.character("k"), .command, empty: true) == .composer)
     }
 
+    @Test func arrowsUseSS3InApplicationCursorMode() {
+        let up = KeyRouter.route(KeyStroke(key: .up), composerIsEmpty: true, applicationCursor: true)
+        #expect(up == .terminal([0x1B, 0x4F, 0x41]))
+        let left = KeyRouter.route(KeyStroke(key: .left), composerIsEmpty: true, applicationCursor: true)
+        #expect(left == .terminal([0x1B, 0x4F, 0x44]))
+    }
+
     @Test func modifiedEnterIsANewlineNotASubmit() {
         #expect(route(.enter, .shift, empty: true) == .composer)
         #expect(route(.enter, .option, empty: true) == .composer)
@@ -61,6 +68,10 @@ import Testing
     @Test func stripsEmbeddedPasteMarkers() {
         let hostile = "x\u{1B}[201~rm -rf ~\u{1B}[200~y"
         #expect(PasteEncoder.paste(hostile) == start + Array("xrm -rf ~y".utf8) + end)
+    }
+
+    @Test func fallsBackToRawTextWhenTheAppDidNotEnableBracketedPaste() {
+        #expect(PasteEncoder.paste("a\nb", bracketed: false) == Array("a\nb".utf8))
     }
 
     @Test func keepsUnicodeIntact() {

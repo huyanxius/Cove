@@ -9,11 +9,13 @@ public enum PasteEncoder {
 
     public static let submit: [UInt8] = [0x0D]
 
-    public static func paste(_ text: String) -> [UInt8] {
+    /// `bracketed` 取终端当前是否处于 bracketed paste 模式（程序用 `ESC[?2004h` 打开）。
+    /// claude 总是打开它；没打开时退回裸文本，至少单行消息还能正常送达。
+    public static func paste(_ text: String, bracketed: Bool = true) -> [UInt8] {
         var body = text.replacingOccurrences(of: "\r\n", with: "\n")
         // 文本里夹带的结束标记会让终端提前退出粘贴模式，后面的内容就变成了逐键输入。
         body = body.replacingOccurrences(of: start, with: "").replacingOccurrences(of: end, with: "")
         while body.hasSuffix("\n") || body.hasSuffix("\r") { body.removeLast() }
-        return Array((start + body + end).utf8)
+        return Array((bracketed ? start + body + end : body).utf8)
     }
 }
