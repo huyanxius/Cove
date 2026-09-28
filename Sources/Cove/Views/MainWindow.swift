@@ -36,6 +36,10 @@ struct MainWindow: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
+                SettingsLink { Label("Settings", systemImage: "gearshape") }
+                    .help("设置（⌘,）")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     model.showInspector.toggle()
                 } label: {

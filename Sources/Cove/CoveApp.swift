@@ -14,7 +14,18 @@ struct CoveApp: App {
             MainWindow()
                 .environment(model)
                 .frame(minWidth: 980, minHeight: 620)
-                .onChange(of: appearance, initial: true) { _, choice in NSApp.appearance = choice.nsAppearance }
+                .onChange(of: appearance, initial: true) { _, choice in
+                    NSApp.appearance = choice.nsAppearance
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.reconcileTones() }
+                }
+                .onReceive(DistributedNotificationCenter.default().publisher(for: Notification.Name("AppleInterfaceThemeChangedNotification"))) { _ in
+                    // 跟随系统时，系统切深浅色也要让会话跟上。
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { model.reconcileTones() }
+                }
+                .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
+                    // 正在干活而被跳过的会话，等它空下来再补上。
+                    model.reconcileTones()
+                }
                 .sheet(isPresented: Binding(get: { !onboarded }, set: { onboarded = !$0 })) {
                     OnboardingView().environment(model)
                 }
@@ -33,6 +44,10 @@ struct CoveApp: App {
                     .keyboardShortcut("n")
                 Button("New Temporary Session") { model.newScratchSession() }
                     .keyboardShortcut("n", modifiers: [.command, .option])
+            }
+            CommandGroup(replacing: .appSettings) {
+                SettingsLink { Text("Settings…") }
+                    .keyboardShortcut(",")
             }
             CommandGroup(after: .sidebar) {
                 Picker("Appearance", selection: $appearance) {

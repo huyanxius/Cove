@@ -88,6 +88,16 @@ struct SidebarView: View {
             HStack(spacing: 8) {
                 footerButton("项目会话", systemImage: "plus", shortcut: "⌘N") { model.chooseDirectoryForNewSession() }
                 footerButton("临时", systemImage: "bolt", shortcut: "⌥⌘N") { model.newScratchSession() }
+                SettingsLink {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13))
+                        .foregroundStyle(SwiftUI.Color.coveT2)
+                        .frame(width: 30, height: 30)
+                        .background(SwiftUI.Color.coveRaised, in: RoundedRectangle(cornerRadius: 7))
+                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(SwiftUI.Color.coveRaisedLine))
+                }
+                .buttonStyle(.plain)
+                .help("设置（⌘,）")
             }
             .padding(.horizontal, 12)
             .frame(height: 52)

@@ -3,7 +3,7 @@ import SwiftUI
 /// 中栏：标签条（终端 + 打开的 diff）、终端或 diff、输入框。
 ///
 /// 看 diff 时终端并不卸载，只是被盖住；输入框始终在，边看改动边写反馈。
-/// 浅色外观下终端是一口圆角的「井」，四周留出纸色；深色外观下铺满，和外壳连成一片。
+/// 终端在两种外观下都铺满中栏，和外壳连成一片，不加描边。
 struct SessionPane: View {
     let session: LiveSession
 
@@ -11,14 +11,11 @@ struct SessionPane: View {
         VStack(spacing: 0) {
             TabBar(session: session)
             content
-                .padding(.horizontal, isLight ? 12 : 0)
             Composer(session: session)
         }
         .background(SwiftUI.Color.coveBg)
     }
 
-    /// 终端以卡片形式嵌入：浅色主题的终端是白纸卡片，四周留出象牙底色；深色铺满。
-    private var isLight: Bool { session.tone == .light }
 
     private var content: some View {
         ZStack {
@@ -31,14 +28,6 @@ struct SessionPane: View {
                          delta: session.fileDeltas[path])
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: isLight ? 10 : 0, style: .continuous))
-        .overlay {
-            if isLight {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(SwiftUI.Color.coveRaisedLine, lineWidth: 1)
-            }
-        }
-        .shadow(color: .black.opacity(isLight ? 0.04 : 0), radius: 10, y: 4)
     }
 }
 

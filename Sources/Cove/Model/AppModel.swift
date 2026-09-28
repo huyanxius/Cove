@@ -165,7 +165,9 @@ final class AppModel {
     func restart(_ id: String) {
         guard let old = live.removeValue(forKey: id) else { return }
         old.terminate()
-        let mode: ClaudeLaunch.Mode = old.cli == .claude ? .resume(sessionID: id) : .new(sessionID: id)
+        // 还没发过消息的 claude 会话没有记录文件，--resume 会失败，改为用同一 ID 新开。
+        let hasTranscript = indexer.transcriptURL(for: id) != nil
+        let mode: ClaudeLaunch.Mode = old.cli == .claude && hasTranscript ? .resume(sessionID: id) : .new(sessionID: id)
         let session = LiveSession(id: id, cwd: old.cwd, title: old.title, mode: mode, cli: old.cli, indexer: indexer)
         live[id] = session
         session.start()
@@ -182,9 +184,22 @@ final class AppModel {
 
     var totalSessionCount: Int { sessions.count }
 
-    /// 所有打开着的 claude 会话里最新的一份用量：5h/7d 额度是账号级的，取最近更新的即可。
+    /// 右下角显示的用量：只来自当前选中的 claude 会话；codex/agy 没有这份数据，就显示空。
     var latestUsage: UsageSnapshot? {
-        selectedLive?.usage ?? live.values.compactMap(\.usage).first
+        guard let session = selectedLive, session.cli == .claude else { return nil }
+        return session.usage
+    }
+
+    /// 外观变了：claude 的主题在启动时就定了，只能重开会话来跟上。空闲的立刻用同一 ID 重开
+    /// （--resume 会把对话原样画回来），正在干活的等这一轮结束——见 `reconcileTones()` 的调用处。
+    func reconcileTones() {
+        let tone: TerminalTone = Palette.isDark(NSApp.effectiveAppearance) ? .dark : .light
+        for session in live.values where session.cli == .claude && session.isRunning && session.tone != tone {
+            switch session.tracker.phase {
+            case .thinking, .running: continue
+            case .idle, .awaitingUser: restart(session.id)
+            }
+        }
     }
     var projectCount: Int { Set(sessions.compactMap(\.cwd)).count }
 }

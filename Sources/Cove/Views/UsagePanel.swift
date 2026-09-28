@@ -5,8 +5,23 @@ import SwiftUI
 /// 数据来自 claude 的 statusLine（见 `UsageRelay`），claude 画出第一次状态栏之前是空的。
 struct UsagePanel: View {
     let usage: UsageSnapshot?
+    /// 当前会话的 CLI；非 claude 时不显示圆环。
+    var cli: CLIKind? = .claude
 
     var body: some View {
+        if let cli, cli != .claude {
+            HStack(spacing: 6) {
+                Image(systemName: "gauge.with.dots.needle.0percent").font(.system(size: 11))
+                Text("\(cli.displayName) 暂不提供用量数据").font(CoveFont.ui(11.5))
+            }
+            .foregroundStyle(SwiftUI.Color.coveT3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            rings
+        }
+    }
+
+    private var rings: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 0) {
                 ring("5h", usage?.fiveHourPercent, resets: usage?.fiveHourResetsAt)
