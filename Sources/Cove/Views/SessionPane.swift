@@ -22,6 +22,13 @@ struct SessionPane: View {
             TerminalHost(session: session)
                 .opacity(session.activeTab == .terminal ? 1 : 0)
                 .allowsHitTesting(session.activeTab == .terminal)
+            if session.isRunning && !session.hasOutput && session.activeTab == .terminal {
+                ZStack {
+                    SwiftUI.Color(nsColor: session.terminal.nativeBackgroundColor)
+                    CoffeeLoader(size: 76, caption: "正在启动 \(session.cli.displayName)…")
+                }
+                .transition(.opacity)
+            }
             if case let .diff(path) = session.activeTab {
                 DiffView(path: path, cwd: session.cwd,
                          revision: session.tracker.changes.files.first { $0.path == path }?.editCount ?? 0,

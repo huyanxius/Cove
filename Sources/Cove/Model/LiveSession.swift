@@ -29,6 +29,8 @@ final class LiveSession: Identifiable {
     /// 最近一次 statusLine 落盘的用量；只有 claude 会话有。
     private(set) var usage: UsageSnapshot?
     private(set) var isRunning = false
+    /// CLI 画出第一屏之前为 false，中栏这段时间显示咖啡杯加载动画。
+    private(set) var hasOutput = false
     private(set) var exitCode: Int32?
 
     /// 输入框里还没发出去的内容，按会话各存一份（M1 再落盘）。
@@ -39,7 +41,7 @@ final class LiveSession: Identifiable {
     var openDiffs: [String] = []
     var activeTab: Tab = .terminal
 
-    @ObservationIgnored let terminal: LocalProcessTerminalView
+    @ObservationIgnored let terminal: CoveTerminalView
     @ObservationIgnored private var tail: JSONLTail?
     @ObservationIgnored private let mode: ClaudeLaunch.Mode
     @ObservationIgnored private let processObserver = ProcessObserver()
@@ -53,12 +55,13 @@ final class LiveSession: Identifiable {
         self.cli = cli
         self.title = title
         self.mode = mode
-        terminal = LocalProcessTerminalView(frame: CGRect(x: 0, y: 0, width: 800, height: 500))
+        terminal = CoveTerminalView(frame: CGRect(x: 0, y: 0, width: 800, height: 500))
         terminal.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         terminal.optionAsMetaKey = true
         tone = Palette.isDark(NSApp.effectiveAppearance) ? .dark : .light
         TerminalPalette.apply(tone, to: terminal)
 
+        terminal.onFirstOutput = { [weak self] in self?.hasOutput = true }
         processObserver.session = self
         terminal.processDelegate = processObserver
 
@@ -189,5 +192,21 @@ private final class ProcessObserver: LocalProcessTerminalViewDelegate {
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         DispatchQueue.main.async { [weak self] in self?.session?.processDidExit(exitCode) }
+    }
+}
+
+/// 记录进程输出的字节数：启动时那串清屏序列只有十几个字节，超过 64 字节才算 CLI 真正画出了东西。
+final class CoveTerminalView: LocalProcessTerminalView {
+    var onFirstOutput: (() -> Void)?
+    private var received = 0
+
+    override func dataReceived(slice: ArraySlice<UInt8>) {
+        super.dataReceived(slice: slice)
+        guard let callback = onFirstOutput else { return }
+        received += slice.count
+        if received > 64 {
+            onFirstOutput = nil
+            DispatchQueue.main.async { callback() }
+        }
     }
 }

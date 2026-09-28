@@ -65,10 +65,15 @@ private struct WelcomeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 96, height: 96)
-                .accessibilityHidden(true)
+            Group {
+                if model.hasLoaded, let cup = Brand.cupMark {
+                    Image(nsImage: cup).resizable().interpolation(.high).scaledToFit()
+                } else {
+                    CoffeeLoader(size: 110)
+                }
+            }
+            .frame(width: 110, height: 114)
+            .accessibilityHidden(true)
             Text("Cove")
                 .font(CoveFont.display(30, weight: .medium))
                 .foregroundStyle(SwiftUI.Color.coveT1)

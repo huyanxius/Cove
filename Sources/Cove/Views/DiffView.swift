@@ -58,7 +58,7 @@ struct DiffView: View {
     @ViewBuilder private var content: some View {
         switch result {
         case nil:
-            ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            CoffeeLoader(size: 56, caption: "正在读取改动…").frame(maxWidth: .infinity, maxHeight: .infinity)
         case .unchanged:
             message("No changes against HEAD.", detail: "The edits may already be committed, or were reverted.")
         case .notRepository:

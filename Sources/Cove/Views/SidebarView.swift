@@ -46,7 +46,7 @@ struct SidebarView: View {
                 .padding(.bottom, 8)
             }
             .overlay {
-                if !model.hasLoaded { ProgressView().controlSize(.small) }
+                if !model.hasLoaded { CoffeeLoader(size: 44, caption: "正在读取会话…") }
             }
             footer
         }

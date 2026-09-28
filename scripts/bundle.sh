@@ -11,5 +11,6 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$(swift build -c "$CONFIG" --show-bin-path)/Cove" "$APP/Contents/MacOS/Cove"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/CupMark.png "$APP/Contents/Resources/CupMark.png"
 codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 echo "$APP"

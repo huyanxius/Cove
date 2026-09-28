@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated { LoaderRenderer.renderIfRequested() }
         // `swift run` 直接跑可执行文件时没有 bundle，得手动变成前台 App。
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)

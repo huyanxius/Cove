@@ -24,4 +24,14 @@ done
 iconutil -c icns "$SET" -o Resources/AppIcon.icns
 mkdir -p docs/assets
 sips -z 256 256 "$TMP/icon_1024.png" --out docs/assets/icon.png >/dev/null
-echo "wrote Resources/AppIcon.icns and docs/assets/icon.png"
+# 不带方块底的杯子本体，欢迎页等处用。
+cp Resources/CupMark.svg "$TMP/cup.svg"
+printf '<html style="background:transparent"><body style="margin:0"><img src="cup.svg" width="540" height="560"></body></html>' > "$TMP/cup.html"
+"$CHROME" --headless=new --disable-gpu --hide-scrollbars --default-background-color=00000000 \
+  --force-device-scale-factor=2 --window-size=540,560 --user-data-dir="$TMP/profile2" \
+  --screenshot="$TMP/cup.png" "file://$TMP/cup.html" >/dev/null 2>&1 &
+PID=$!
+i=0; while [ ! -s "$TMP/cup.png" ] && [ $i -lt 40 ]; do sleep 0.5; i=$((i+1)); done
+sleep 0.5; kill $PID 2>/dev/null || true
+cp "$TMP/cup.png" Resources/CupMark.png
+echo "wrote Resources/AppIcon.icns, Resources/CupMark.png and docs/assets/icon.png"
