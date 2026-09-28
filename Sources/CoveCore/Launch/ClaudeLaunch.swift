@@ -1,0 +1,30 @@
+/// 拼出拉起 claude 的命令行。
+///
+/// 一律经用户的登录交互 shell（`-l -i -c`）执行，而不是直接 exec claude 的绝对路径：
+/// 从 Finder 启动的 App 拿不到用户 shell 里的 PATH、nvm、alias 和 `CLAUDE_CONFIG_DIR`，
+/// 有人的 `claude` 本身就是一个带环境变量的 alias。走 shell 才和他在终端里敲的完全一致。
+public enum ClaudeLaunch {
+    public enum Mode: Equatable, Sendable {
+        /// ID 由 Cove 预先生成，这样标签页从第一秒起就知道该盯哪个 JSONL。
+        case new(sessionID: String)
+        /// 恢复时 CLI 沿用原 ID 继续写同一个文件（除非加 `--fork-session`）。
+        case resume(sessionID: String)
+    }
+
+    public static func claudeArguments(_ mode: Mode) -> [String] {
+        switch mode {
+        case let .new(id): ["--session-id", id]
+        case let .resume(id): ["--resume", id]
+        }
+    }
+
+    /// `claude` 本身不加引号，否则 shell 不会做 alias 展开。
+    public static func shellCommand(shell: String, claudeArguments: [String]) -> (executable: String, args: [String]) {
+        let line = (["claude"] + claudeArguments.map(shellQuote)).joined(separator: " ")
+        return (shell, ["-l", "-i", "-c", line])
+    }
+
+    public static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+    }
+}
