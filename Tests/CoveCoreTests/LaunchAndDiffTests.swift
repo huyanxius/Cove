@@ -16,7 +16,14 @@ import Testing
     @Test func runsClaudeThroughAnInteractiveLoginShellSoAliasesApply() {
         let command = ClaudeLaunch.shellCommand(shell: "/bin/zsh", claudeArguments: ["--resume", "a b"])
         #expect(command.executable == "/bin/zsh")
-        #expect(command.args == ["-l", "-i", "-c", "claude '--resume' 'a b'"])
+        #expect(command.args.prefix(3) == ["-l", "-i", "-c"])
+        #expect(command.args.last?.hasSuffix("claude '--resume' 'a b'") == true)
+    }
+
+    @Test func clearsShellStartupOutputBeforeClaudeStarts() {
+        // .zshrc 里打印的横幅、提示不该留在会话的滚动缓冲里。
+        let line = ClaudeLaunch.shellCommand(shell: "/bin/zsh", claudeArguments: []).args.last ?? ""
+        #expect(line.hasPrefix(#"printf '\033[H\033[2J\033[3J'; "#))
     }
 }
 
