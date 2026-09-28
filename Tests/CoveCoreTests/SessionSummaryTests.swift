@@ -46,6 +46,12 @@ import Testing
         #expect(s?.lastActivity == now)
     }
 
+    @Test func interruptionsDoNotCountAsPrompts() {
+        let s = summarize([#"{"type":"user","message":{"content":"[Request interrupted by user]"}}"#, prompt])
+        #expect(s?.title == "first question")
+        #expect(s?.promptCount == 1)
+    }
+
     @Test func emptySessionsAreDropped() {
         #expect(summarize([#"{"type":"mode","mode":"normal"}"#]) == nil)
     }

@@ -45,6 +45,11 @@ public struct ActivityTracker: Sendable {
                 phase = .thinking(since: timestamp)
             }
 
+        case let .interrupted(timestamp):
+            // 被打断的工具调用之后可能还会补一条结果，但回合已经结束了。
+            pending.removeAll()
+            phase = .awaitingUser(since: timestamp)
+
         case let .cost(added, removed, _):
             linesAdded = added
             linesRemoved = removed

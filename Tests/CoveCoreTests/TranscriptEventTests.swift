@@ -69,4 +69,13 @@ import Testing
         #expect(TranscriptEvent.parse("{not json") == [.other])
         #expect(TranscriptEvent.parse("") == [.other])
     }
+
+    @Test func interruptionMarkersAreNotHumanPrompts() {
+        let line = #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]},"timestamp":"2026-09-28T04:03:38.339Z"}"#
+        guard case .interrupted = TranscriptEvent.parse(line).first else {
+            Issue.record("expected .interrupted"); return
+        }
+        let forTool = #"{"type":"user","message":{"content":"[Request interrupted by user for tool use]"}}"#
+        #expect(TranscriptEvent.parse(forTool) == [.interrupted(timestamp: nil)])
+    }
 }

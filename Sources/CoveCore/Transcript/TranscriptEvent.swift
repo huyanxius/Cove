@@ -17,6 +17,9 @@ public enum TranscriptEvent: Equatable, Sendable {
     case assistant(AssistantBlock, stopReason: String?, timestamp: Date?)
     /// 工具执行完毕。`taskID` 只在 TaskCreate 的结果里有，用来把任务编号对回调用。
     case toolResult(toolUseID: String, isError: Bool, taskID: String?, timestamp: Date?)
+    /// 用户按 Esc 打断了回合。CLI 把它记成一条 user 文本 `[Request interrupted by user…]`，
+    /// 长得像人话，但不是——不能算进标题和消息数，也意味着轮到人了。
+    case interrupted(timestamp: Date?)
     /// 会话累计统计，CLI 周期性整体重写，不是增量。
     case cost(linesAdded: Int, linesRemoved: Int, costUSD: Double)
     case other
@@ -75,6 +78,7 @@ public enum TranscriptEvent: Equatable, Sendable {
         }
         // `<command-name>`、`<local-command-stdout>` 之类是 CLI 回显斜杠命令，不是人话。
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("[Request interrupted by user") { return [.interrupted(timestamp: timestamp)] }
         guard !trimmed.isEmpty, !trimmed.hasPrefix("<") else { return [.other] }
         return [.humanPrompt(text: trimmed, timestamp: timestamp,
                              cwd: object["cwd"] as? String, gitBranch: object["gitBranch"] as? String)]

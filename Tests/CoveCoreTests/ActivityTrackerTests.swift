@@ -90,4 +90,14 @@ import Testing
         #expect(tracker.linesAdded == 52)
         #expect(tracker.linesRemoved == 7)
     }
+
+    @Test func interruptionHandsTheTurnBackToTheUser() {
+        var tracker = ActivityTracker()
+        tracker.apply(prompt)
+        tracker.apply(toolUse("t1", "Bash", ["command": "ls"]))
+        tracker.apply(.interrupted(timestamp: nil))
+        #expect(tracker.phase == .awaitingUser(since: nil))
+        tracker.apply(result("t1"))
+        #expect(tracker.phase == .awaitingUser(since: nil))
+    }
 }
