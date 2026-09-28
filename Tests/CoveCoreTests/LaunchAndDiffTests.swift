@@ -7,6 +7,12 @@ import Testing
         #expect(ClaudeLaunch.claudeArguments(.resume(sessionID: "abc")) == ["--resume", "abc"])
     }
 
+    @Test func overridesClaudeThemeOnlyWhenAsked() {
+        #expect(ClaudeLaunch.claudeArguments(.new(sessionID: "abc"), theme: "light")
+            == ["--session-id", "abc", "--settings", #"{"theme":"light"}"#])
+        #expect(ClaudeLaunch.claudeArguments(.resume(sessionID: "abc"), theme: nil) == ["--resume", "abc"])
+    }
+
     @Test func quotesForPOSIXShells() {
         #expect(ClaudeLaunch.shellQuote("plain") == "'plain'")
         #expect(ClaudeLaunch.shellQuote("it's") == #"'it'\''s'"#)

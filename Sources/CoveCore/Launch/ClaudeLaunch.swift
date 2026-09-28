@@ -11,11 +11,16 @@ public enum ClaudeLaunch {
         case resume(sessionID: String)
     }
 
-    public static func claudeArguments(_ mode: Mode) -> [String] {
+    /// `theme` 非空时经 `--settings` 只为这个进程覆盖 claude 的 `/theme`，让 TUI 配色和
+    /// Cove 的外观一致（浅色外观配 claude 的 light 主题）；用户的 settings.json 不受影响。
+    public static func claudeArguments(_ mode: Mode, theme: String? = nil) -> [String] {
+        var arguments: [String]
         switch mode {
-        case let .new(id): ["--session-id", id]
-        case let .resume(id): ["--resume", id]
+        case let .new(id): arguments = ["--session-id", id]
+        case let .resume(id): arguments = ["--resume", id]
         }
+        if let theme { arguments += ["--settings", #"{"theme":"\#(theme)"}"#] }
+        return arguments
     }
 
     /// `claude` 本身不加引号，否则 shell 不会做 alias 展开。
