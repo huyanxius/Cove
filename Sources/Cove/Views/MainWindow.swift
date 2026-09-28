@@ -19,7 +19,7 @@ struct MainWindow: View {
                 }
             }
             .inspector(isPresented: $model.showInspector) {
-                InspectorView(session: model.selectedLive)
+                InspectorView(session: model.selectedLive, usage: model.latestUsage)
                     .inspectorColumnWidth(min: 260, ideal: 300, max: 400)
             }
         }

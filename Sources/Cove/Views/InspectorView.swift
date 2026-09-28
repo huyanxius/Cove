@@ -4,6 +4,9 @@ import SwiftUI
 /// 右栏：任务、本会话改过的文件（点开看 diff）、会话信息。会话信息钉在底部。
 struct InspectorView: View {
     let session: LiveSession?
+    let usage: UsageSnapshot?
+    @AppStorage("showUsage") private var showUsage = true
+    @AppStorage("showPet") private var showPet = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13,16 +16,28 @@ struct InspectorView: View {
                         TasksSection(board: session.tracker.board)
                         SwiftUI.Color.coveLine.frame(height: 1)
                         ChangesSection(session: session)
+                        SwiftUI.Color.coveLine.frame(height: 1)
+                        InfoSection(session: session)
                     }
                 }
-                SwiftUI.Color.coveLine.frame(height: 1)
-                InfoSection(session: session)
             } else {
                 Text("选中一个会话，这里会显示它的任务和改动。")
                     .font(CoveFont.ui(12))
                     .foregroundStyle(SwiftUI.Color.coveT3)
                     .padding(16)
                 Spacer()
+            }
+            if showUsage {
+                SwiftUI.Color.coveLine.frame(height: 1)
+                UsagePanel(usage: usage)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+            }
+            if showPet {
+                SwiftUI.Color.coveLine.frame(height: 1)
+                PetPanel(session: session, usage: session?.usage)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -219,9 +234,9 @@ private struct InfoSection: View {
         VStack(alignment: .leading, spacing: 0) {
             SectionHeader(title: "Session") { EmptyView() }
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 7) {
+                row("CLI", session.cli.displayName)
                 row("Folder", (session.cwd as NSString).abbreviatingWithTildeInPath)
                 if let branch = session.tracker.gitBranch { row("Branch", branch) }
-                if let model = session.tracker.model { row("Model", ActivityTracker.displayName(forModel: model)) }
                 row("ID", session.id)
             }
         }
