@@ -70,4 +70,15 @@ import Testing
         #expect(sessions.map(\.title) == ["New", "Old"])
         #expect(sessions.first?.id == "new")
     }
+
+    @Test func locatesTranscriptByIDAcrossProjects() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let project = root.appendingPathComponent("-Users-me-中文-dir")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "".write(to: project.appendingPathComponent("abc.jsonl"), atomically: true, encoding: .utf8)
+        let indexer = SessionIndexer(root: root)
+        #expect(indexer.transcriptURL(for: "abc")?.lastPathComponent == "abc.jsonl")
+        #expect(indexer.transcriptURL(for: "missing") == nil)
+    }
 }

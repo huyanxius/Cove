@@ -57,6 +57,18 @@ public final class SessionIndexer: @unchecked Sendable {
         return result.sorted { $0.lastActivity > $1.lastActivity }
     }
 
+    /// 按会话 ID 找它的 JSONL。新会话的 cwd 编码规则是 CLI 的内部细节（中文、点号都会被
+    /// 压成 `-`），与其复刻它，不如在二十来个项目目录里找同名文件。
+    public func transcriptURL(for sessionID: String) -> URL? {
+        let fm = FileManager.default
+        let name = sessionID + ".jsonl"
+        for project in (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
+            let candidate = project.appendingPathComponent(name)
+            if fm.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return nil
+    }
+
     static func summarize(file: URL, modified: Date) -> SessionSummary? {
         guard let data = try? Data(contentsOf: file, options: .alwaysMapped) else { return nil }
         let relevant = JSONLScanner.lines(in: data, matching: JSONLScanner.summaryFilter)

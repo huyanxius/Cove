@@ -15,6 +15,17 @@ public struct SessionSummary: Identifiable, Hashable, Sendable {
     public var lastActivity: Date
     public var promptCount: Int
 
+    public init(id: String, fileURL: URL, title: String, cwd: String?, gitBranch: String?,
+                lastActivity: Date, promptCount: Int) {
+        self.id = id
+        self.fileURL = fileURL
+        self.title = title
+        self.cwd = cwd
+        self.gitBranch = gitBranch
+        self.lastActivity = lastActivity
+        self.promptCount = promptCount
+    }
+
     public var projectName: String {
         cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Unknown"
     }
