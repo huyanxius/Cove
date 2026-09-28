@@ -2,64 +2,100 @@ import CoveCore
 import SwiftUI
 
 /// 左栏：按项目（cwd）分组的全部会话，组按最近活动排序。点一下就在原目录里 resume。
+///
+/// 不用系统 List：它的选中态固定是系统强调色的实底，和暖港/潮汐的中性选中色冲突。
 struct SidebarView: View {
     @Environment(AppModel.self) private var model
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
-        @Bindable var model = model
-        List(selection: $model.selection) {
-            ForEach(model.groups) { group in
-                Section {
-                    ForEach(group.sessions) { summary in
-                        SessionRow(summary: summary, live: model.live[summary.id])
-                            .tag(summary.id)
-                            .contextMenu { menu(for: summary) }
+        VStack(spacing: 0) {
+            search
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(model.groups) { group in
+                        GroupHeader(name: group.name, count: group.sessions.count + group.hiddenCount)
+                            .help(group.key)
+                        ForEach(group.sessions) { summary in
+                            SessionRow(summary: summary, live: model.live[summary.id],
+                                       selected: model.selection == summary.id)
+                                .onTapGesture { model.selection = summary.id }
+                                .contextMenu { menu(for: summary) }
+                        }
+                        if group.hiddenCount > 0 {
+                            Button("\(group.hiddenCount) more") { model.expandedGroups.insert(group.key) }
+                                .buttonStyle(.plain)
+                                .font(CoveFont.ui(12))
+                                .foregroundStyle(SwiftUI.Color.coveT3)
+                                .frame(height: 28)
+                                .padding(.leading, 26)
+                        }
                     }
-                    if group.hiddenCount > 0 {
-                        Button("\(group.hiddenCount) more") { model.expandedGroups.insert(group.key) }
-                            .buttonStyle(.plain)
-                            .font(CoveFont.mono(10))
-                            .foregroundStyle(Color.coveInkMuted)
-                            .padding(.leading, 17)
-                    }
-                } header: {
-                    SectionLabel(text: group.name)
-                        .help(group.key)
                 }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+            }
+            .overlay {
+                if !model.hasLoaded { ProgressView().controlSize(.small) }
+            }
+            footer
+        }
+        .background(SwiftUI.Color.coveSidebar.ignoresSafeArea())
+    }
+
+    private var search: some View {
+        @Bindable var model = model
+        return HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12))
+            TextField("Search sessions", text: $model.searchText)
+                .textFieldStyle(.plain)
+                .font(CoveFont.ui(12.5))
+                .foregroundStyle(SwiftUI.Color.coveT1)
+                .focused($searchFocused)
+            if model.searchText.isEmpty {
+                Text("⌘K").font(CoveFont.mono(10.5))
+            } else {
+                Button { model.searchText = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain)
             }
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
-        .background(Color.coveSidebar)
-        .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search sessions")
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
-        .overlay {
-            if !model.hasLoaded { ProgressView().controlSize(.small) }
+        .foregroundStyle(SwiftUI.Color.coveT3)
+        .padding(.horizontal, 9)
+        .frame(height: 28)
+        .background(SwiftUI.Color.coveRaised, in: RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(SwiftUI.Color.coveRaisedLine))
+        .padding(.horizontal, 12)
+        .padding(.top, 2)
+        .padding(.bottom, 10)
+        .background {
+            Button("") { searchFocused = true }.keyboardShortcut("k").hidden()
         }
     }
 
     private var footer: some View {
         VStack(spacing: 0) {
-            Rectangle().fill(Color.coveHairline).frame(height: 1)
-            HStack {
-                Button {
-                    model.chooseDirectoryForNewSession()
-                } label: {
-                    Label("New Session", systemImage: "plus")
-                        .font(.system(size: 12, weight: .medium))
+            SwiftUI.Color.coveLine.frame(height: 1)
+            Button {
+                model.chooseDirectoryForNewSession()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus").font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(SwiftUI.Color.coveAccent)
+                    Text("New Session").font(CoveFont.ui(12.5, weight: .medium))
+                        .foregroundStyle(SwiftUI.Color.coveT1)
+                    Spacer()
+                    Text("⌘N").font(CoveFont.mono(10.5)).foregroundStyle(SwiftUI.Color.coveT3)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.coveHarbor)
-                Spacer()
-                Text("\(model.totalSessionCount)")
-                    .font(CoveFont.mono(10))
-                    .foregroundStyle(Color.coveInkMuted)
-                    .help("Sessions on this Mac")
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(SwiftUI.Color.coveRaised, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(SwiftUI.Color.coveRaisedLine))
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .frame(height: 52)
         }
-        .background(Color.coveSidebar)
     }
 
     @ViewBuilder private func menu(for summary: SessionSummary) -> some View {
@@ -78,45 +114,100 @@ struct SidebarView: View {
     }
 }
 
+private struct GroupHeader: View {
+    let name: String
+    let count: Int
+
+    var body: some View {
+        HStack {
+            SectionLabel(text: name)
+            Spacer()
+            Text("\(count)").font(CoveFont.mono(10.5)).foregroundStyle(SwiftUI.Color.coveT3)
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .frame(height: 28)
+        .padding(.top, 8)
+    }
+}
+
 private struct SessionRow: View {
     let summary: SessionSummary
     let live: LiveSession?
+    let selected: Bool
+    @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .top, spacing: 6) {
             Group {
-                if let live {
-                    PixelDot(state: PixelDot.State(phase: live.tracker.phase, isRunning: live.isRunning))
-                } else {
-                    Color.clear
-                }
+                if let live { PixelDot(state: state(live)) }
             }
-            .frame(width: 9, height: 9)
-            .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+            .frame(width: 14, height: 17)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(live?.title ?? summary.title)
-                    .font(CoveFont.title(13))
-                    .foregroundStyle(Color.coveInk)
+                    .font(CoveFont.ui(13))
+                    .foregroundStyle(SwiftUI.Color.coveT1)
                     .lineLimit(1)
-                Text(subtitle)
-                    .font(CoveFont.mono(10))
-                    .foregroundStyle(Color.coveInkMuted)
+                meta
+                    .font(CoveFont.ui(11))
                     .lineLimit(1)
             }
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
+        .padding(.leading, 6)
+        .padding(.trailing, 8)
+        .frame(height: 44)
+        .background(background, in: RoundedRectangle(cornerRadius: 7))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
-    private var subtitle: String {
-        let time = Self.relative.localizedString(for: min(summary.lastActivity, .now), relativeTo: .now)
-        guard let branch = summary.gitBranch, !branch.isEmpty, branch != "HEAD" else { return time }
-        return "\(time) · \(branch)"
+    private var background: SwiftUI.Color {
+        if selected { return .coveSelect }
+        return hovering ? SwiftUI.Color.coveSelect.opacity(0.5) : .clear
+    }
+
+    private func state(_ live: LiveSession) -> SessionState {
+        SessionState(phase: live.tracker.phase, isRunning: live.isRunning)
+    }
+
+    /// 打开着的会话说它在干什么；其余的说多久以前、在哪个分支。
+    @ViewBuilder private var meta: some View {
+        if let live, live.isRunning, state(live) == .waiting {
+            Text("等你回复").foregroundStyle(SwiftUI.Color.coveAttn)
+        } else if let live, live.isRunning, case let .running(tool, _) = live.tracker.phase {
+            detail(tool.verb, branch: live.tracker.gitBranch ?? summary.gitBranch)
+        } else if let live, live.isRunning, case .thinking = live.tracker.phase {
+            detail("Thinking", branch: live.tracker.gitBranch ?? summary.gitBranch)
+        } else {
+            detail(Self.relativeTime(summary.lastActivity), branch: summary.gitBranch)
+        }
+    }
+
+    private func detail(_ lead: String, branch: String?) -> some View {
+        HStack(spacing: 0) {
+            Text(lead)
+            if let branch, !branch.isEmpty, branch != "HEAD" {
+                Text(" · ")
+                Text(branch).font(CoveFont.mono(10.5))
+            }
+        }
+        .foregroundStyle(selected ? SwiftUI.Color.coveT2 : SwiftUI.Color.coveT3)
+    }
+
+    /// 一分钟以内说「刚刚」：格式化器对 0 秒会给出「0 秒后」这种怪话。
+    static func relativeTime(_ date: Date) -> String {
+        if Date.now.timeIntervalSince(date) < 60 { return "刚刚" }
+        return relative.localizedString(for: date, relativeTo: .now)
     }
 
     private static let relative: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
+        formatter.unitsStyle = .short
         return formatter
     }()
 }

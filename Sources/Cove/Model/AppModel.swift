@@ -35,7 +35,7 @@ final class AppModel {
     /// `open -a Cove --args --new <dir>`：启动即在该目录新建会话，给脚本和以后的 `cove` 命令用。
     func handleLaunchArguments(_ arguments: [String] = CommandLine.arguments) {
         guard let flag = arguments.firstIndex(of: "--new"), arguments.indices.contains(flag + 1) else { return }
-        let url = URL(fileURLWithPath: arguments[flag + 1]).standardizedFileURL
+        let url = URL(fileURLWithPath: arguments[flag + 1]).resolvingSymlinksInPath()
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
             newSession(in: url)
@@ -79,7 +79,9 @@ final class AppModel {
         var order: [String] = []
         var buckets: [String: [SessionSummary]] = [:]
         for summary in all {
-            let key = summary.cwd ?? "?"
+            // claude 记的是解析过软链的真实路径（/private/tmp/…），面板和命令行给的可能是 /tmp/…，
+            // 不统一的话同一个目录会分成两组。
+            let key = summary.cwd.map { ($0 as NSString).resolvingSymlinksInPath } ?? "?"
             if buckets[key] == nil { order.append(key) }
             buckets[key, default: []].append(summary)
         }
@@ -109,7 +111,7 @@ final class AppModel {
 
     func newSession(in directory: URL) {
         let id = UUID().uuidString.lowercased()
-        let session = LiveSession(id: id, cwd: directory.path, title: "New session",
+        let session = LiveSession(id: id, cwd: directory.resolvingSymlinksInPath().path, title: "New session",
                                   mode: .new(sessionID: id), indexer: indexer)
         live[id] = session
         session.start()

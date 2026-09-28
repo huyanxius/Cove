@@ -9,61 +9,67 @@ import SwiftUI
 struct Composer: View {
     let session: LiveSession
     @State private var height: CGFloat = ComposerField.minHeight
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         @Bindable var session = session
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .bottom, spacing: 8) {
-                ComposerField(text: $session.draft, height: $height, focusRequest: session.focusRequest,
-                              placeholder: placeholder,
-                              applicationCursor: { session.applicationCursor },
-                              onSubmit: submit,
-                              onPassthrough: { session.sendRaw($0) })
-                    .frame(height: height)
+        VStack(alignment: .leading, spacing: 10) {
+            ComposerField(text: $session.draft, height: $height, focusRequest: session.focusRequest,
+                          placeholder: session.isRunning ? "Message Claude…" : "会话已结束",
+                          applicationCursor: { session.applicationCursor },
+                          onSubmit: submit,
+                          onPassthrough: { session.sendRaw($0) })
+                .frame(height: height)
 
-                Button(action: { submit(session.draft) }) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 26, height: 26)
-                        .background(canSend ? Color.coveHarbor : Color.coveHairline, in: RoundedRectangle(cornerRadius: 5))
-                        .foregroundStyle(canSend ? Color.white : Color.coveInkMuted)
+            HStack(spacing: 6) {
+                // 只有输入框为空时按键才会交给 Claude，所以提示也只在那时出现。
+                if session.draft.isEmpty && session.isRunning {
+                    Text("输入框为空时，")
+                    KeyCap(text: "↑↓")
+                    KeyCap(text: "esc")
+                    KeyCap(text: "tab")
+                    Text("交给 Claude 的菜单")
                 }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
-                .help("Send (Return)")
-                .accessibilityLabel("Send")
+                Spacer(minLength: 8)
+                KeyCap(text: "⇧↩")
+                Text("换行")
+                sendButton.padding(.leading, 4)
             }
-            .padding(.leading, 12)
-            .padding(.trailing, 8)
-            .padding(.vertical, 8)
-            .background(Color.coveSurface, in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.coveHairline))
-
-            hints
+            .font(CoveFont.ui(11.5))
+            .foregroundStyle(SwiftUI.Color.coveT3)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-        .padding(.bottom, 10)
+        .padding(.top, 12)
+        .padding(.leading, 16)
+        .padding(.trailing, 10)
+        .padding(.bottom, 8)
+        .background(SwiftUI.Color.coveRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(SwiftUI.Color.coveRaisedLine))
+        .shadow(color: .black.opacity(colorScheme == .light ? 0.05 : 0), radius: 10, y: 4)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 14)
+        .overlay(alignment: .top) {
+            if colorScheme == .dark { SwiftUI.Color.coveLine.frame(height: 1) }
+        }
     }
 
-    private var hints: some View {
-        HStack(spacing: 14) {
-            Text("⏎ send")
-            Text("⇧⏎ newline")
-            Text("empty field → ↑↓ ⎋ ⇥ go to Claude")
-            Spacer()
+    private var sendButton: some View {
+        Button(action: { submit(session.draft) }) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(SwiftUI.Color.coveAccentFill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .opacity(canSend ? 1 : 0.45)
         }
-        .font(CoveFont.mono(10))
-        .foregroundStyle(Color.coveInkMuted.opacity(0.8))
-        .padding(.horizontal, 2)
+        .buttonStyle(.plain)
+        .disabled(!canSend)
+        .help("发送（Return）")
+        .accessibilityLabel("Send")
     }
 
     private var canSend: Bool {
         session.isRunning && !session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var placeholder: String {
-        session.isRunning ? "Message Claude — or leave empty and use ↑↓ to drive its menus" : "Session ended"
     }
 
     private func submit(_ text: String) {
@@ -101,8 +107,8 @@ struct ComposerField: NSViewRepresentable {
         textView.allowsUndo = true
         textView.drawsBackground = false
         textView.font = .systemFont(ofSize: 14)
-        textView.textColor = Palette.ink
-        textView.insertionPointColor = Palette.harbor
+        textView.textColor = Palette.t1
+        textView.insertionPointColor = Palette.accent
         textView.textContainerInset = NSSize(width: 0, height: 2)
         textView.textContainer?.lineFragmentPadding = 0
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -186,7 +192,7 @@ final class ComposerTextView: NSTextView {
         guard string.isEmpty, !placeholder.isEmpty else { return }
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font ?? .systemFont(ofSize: 14),
-            .foregroundColor: Palette.inkMuted.withAlphaComponent(0.7),
+            .foregroundColor: Palette.t3,
         ]
         placeholder.draw(at: NSPoint(x: textContainerOrigin.x, y: textContainerOrigin.y), withAttributes: attributes)
     }

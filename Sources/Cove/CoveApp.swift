@@ -5,6 +5,7 @@ import SwiftUI
 struct CoveApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
+    @AppStorage("appearance") private var appearance = AppearanceChoice.system
 
     var body: some Scene {
         // 单窗口：选中哪个会话是全局状态，多窗口共享同一个 model 会互相抢选择。
@@ -12,6 +13,7 @@ struct CoveApp: App {
             MainWindow()
                 .environment(model)
                 .frame(minWidth: 980, minHeight: 620)
+                .onChange(of: appearance, initial: true) { _, choice in NSApp.appearance = choice.nsAppearance }
                 .task {
                     delegate.model = model
                     model.startRefreshing()
@@ -24,6 +26,11 @@ struct CoveApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("New Session…") { model.chooseDirectoryForNewSession() }
                     .keyboardShortcut("n")
+            }
+            CommandGroup(after: .sidebar) {
+                Picker("Appearance", selection: $appearance) {
+                    ForEach(AppearanceChoice.allCases) { Text($0.title).tag($0) }
+                }
             }
             CommandMenu("Session") {
                 Button("Focus Composer") { model.selectedLive?.focusRequest += 1 }
@@ -62,5 +69,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { model?.terminateAll() }
+    }
+}
+
+/// 外观：跟随系统，或固定浅色 / 深色。只影响新开或恢复的会话里 claude 的主题。
+enum AppearanceChoice: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: "Follow System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
     }
 }

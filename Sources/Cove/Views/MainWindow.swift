@@ -1,3 +1,4 @@
+import CoveCore
 import SwiftUI
 
 struct MainWindow: View {
@@ -7,11 +8,11 @@ struct MainWindow: View {
         @Bindable var model = model
         NavigationSplitView {
             SidebarView()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 380)
+                .navigationSplitViewColumnWidth(min: 230, ideal: 260, max: 360)
         } detail: {
             Group {
                 if let session = model.selectedLive {
-                    SessionPane(session: session, onRestart: { model.restart(session.id) })
+                    SessionPane(session: session)
                         .id(session.id)
                 } else {
                     WelcomeView()
@@ -19,19 +20,20 @@ struct MainWindow: View {
             }
             .inspector(isPresented: $model.showInspector) {
                 InspectorView(session: model.selectedLive)
-                    .inspectorColumnWidth(min: 240, ideal: 290, max: 420)
+                    .inspectorColumnWidth(min: 260, ideal: 300, max: 400)
             }
         }
         .navigationTitle(model.selectedLive?.title ?? "Cove")
         .navigationSubtitle(subtitle)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.chooseDirectoryForNewSession()
-                } label: {
-                    Label("New Session", systemImage: "plus")
+            ToolbarItem(placement: .principal) {
+                if let session = model.selectedLive {
+                    ActivityPill(session: session)
+                        .onTapGesture(count: 2) {
+                            if !session.isRunning { model.restart(session.id) }
+                        }
+                        .help(session.isRunning ? "" : "双击恢复会话")
                 }
-                .help("New Session (⌘N)")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -39,15 +41,18 @@ struct MainWindow: View {
                 } label: {
                     Label("Inspector", systemImage: "sidebar.trailing")
                 }
-                .help("Toggle Inspector (⌥⌘I)")
+                .help("显示/隐藏检查器（⌥⌘I）")
             }
         }
-        .tint(.coveHarbor)
+        .toolbarBackground(SwiftUI.Color.coveBg, for: .windowToolbar)
+        .tint(.coveAccent)
     }
 
     private var subtitle: String {
         guard let session = model.selectedLive else { return "" }
-        return (session.cwd as NSString).abbreviatingWithTildeInPath
+        let folder = (session.cwd as NSString).abbreviatingWithTildeInPath
+        guard let branch = session.tracker.gitBranch else { return folder }
+        return "\(folder) · \(branch)"
     }
 }
 
@@ -55,35 +60,57 @@ private struct WelcomeView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(spacing: 18) {
-            PixelLogo(cell: 5)
-            VStack(spacing: 6) {
-                Text("Cove")
-                    .font(CoveFont.title(30, weight: .medium))
-                    .foregroundStyle(Color.coveInk)
-                Text("A harbor for your Claude Code sessions.")
-                    .font(CoveFont.title(15))
-                    .foregroundStyle(Color.coveInkMuted)
-            }
+        VStack(spacing: 0) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 96, height: 96)
+                .accessibilityHidden(true)
+            Text("Cove")
+                .font(CoveFont.display(30, weight: .medium))
+                .foregroundStyle(SwiftUI.Color.coveT1)
+                .padding(.top, 20)
+            Text("A harbor for your Claude Code sessions.")
+                .font(CoveFont.display(15))
+                .foregroundStyle(SwiftUI.Color.coveT2)
+                .padding(.top, 6)
             HStack(spacing: 10) {
-                Button("New Session…") { model.chooseDirectoryForNewSession() }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut("n")
+                Button {
+                    model.chooseDirectoryForNewSession()
+                } label: {
+                    Text("New Session…")
+                        .font(CoveFont.ui(13, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .frame(height: 32)
+                        .background(SwiftUI.Color.coveAccentFill, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("n")
                 if let latest = model.sessions.first {
-                    Button("Resume “\(latest.title.prefix(28))”") { model.selection = latest.id }
-                        .buttonStyle(.bordered)
+                    Button {
+                        model.selection = latest.id
+                    } label: {
+                        Text("继续「\(String(latest.title.prefix(24)))」")
+                            .font(CoveFont.ui(13))
+                            .foregroundStyle(SwiftUI.Color.coveT1)
+                            .lineLimit(1)
+                            .padding(.horizontal, 16)
+                            .frame(height: 32)
+                            .background(SwiftUI.Color.coveRaised, in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(SwiftUI.Color.coveRaisedLine))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .controlSize(.large)
-            .padding(.top, 6)
+            .padding(.top, 28)
             if model.hasLoaded {
-                Text("\(model.totalSessionCount) sessions · \(model.projectCount) projects on this Mac")
-                    .font(CoveFont.mono(10))
-                    .foregroundStyle(Color.coveInkMuted)
-                    .padding(.top, 4)
+                Text("\(model.totalSessionCount) sessions · \(model.projectCount) projects")
+                    .font(CoveFont.mono(10.5))
+                    .foregroundStyle(SwiftUI.Color.coveT3)
+                    .padding(.top, 18)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.coveCanvas)
+        .background(SwiftUI.Color.coveBg)
     }
 }

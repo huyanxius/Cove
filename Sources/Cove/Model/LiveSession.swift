@@ -20,7 +20,11 @@ final class LiveSession: Identifiable {
     var title: String
     let startedAt = Date()
 
-    private(set) var tracker = ActivityTracker()
+    private(set) var tracker = ActivityTracker() {
+        didSet { if tracker.changes != oldValue.changes { refreshFileDeltas() } }
+    }
+    /// 每个改动文件相对 HEAD 的增删行数，键是绝对路径。随 Agent 的编辑刷新。
+    private(set) var fileDeltas: [String: LineDelta] = [:]
     private(set) var isRunning = false
     private(set) var exitCode: Int32?
 
@@ -36,6 +40,9 @@ final class LiveSession: Identifiable {
     @ObservationIgnored private var tail: JSONLTail?
     @ObservationIgnored private let mode: ClaudeLaunch.Mode
     @ObservationIgnored private let processObserver = ProcessObserver()
+    /// 启动时按 App 外观选定，并经 `--settings` 交给 claude。运行中的 TUI 换不了主题，
+    /// 所以之后切换外观不改它——新开或恢复的会话才会跟上。
+    @ObservationIgnored let tone: TerminalTone
 
     init(id: String, cwd: String, title: String, mode: ClaudeLaunch.Mode, indexer: SessionIndexer) {
         self.id = id
@@ -45,7 +52,8 @@ final class LiveSession: Identifiable {
         terminal = LocalProcessTerminalView(frame: CGRect(x: 0, y: 0, width: 800, height: 500))
         terminal.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         terminal.optionAsMetaKey = true
-        TerminalPalette.apply(Self.currentTone(), to: terminal)
+        tone = Palette.isDark(NSApp.effectiveAppearance) ? .dark : .light
+        TerminalPalette.apply(tone, to: terminal)
 
         processObserver.session = self
         terminal.processDelegate = processObserver
@@ -57,7 +65,7 @@ final class LiveSession: Identifiable {
 
     func start() {
         let shell = Self.loginShell()
-        let command = ClaudeLaunch.shellCommand(shell: shell, claudeArguments: ClaudeLaunch.claudeArguments(mode))
+        let command = ClaudeLaunch.shellCommand(shell: shell, claudeArguments: ClaudeLaunch.claudeArguments(mode, theme: tone == .dark ? "dark" : "light"))
         var environment = Terminal.getEnvironmentVariables(termName: "xterm-256color", trueColor: true)
         environment.append("SHELL=\(shell)")
         terminal.startProcess(executable: command.executable, args: command.args,
@@ -102,15 +110,25 @@ final class LiveSession: Identifiable {
         exitCode = code
     }
 
-    func applyTone() {
-        TerminalPalette.apply(Self.currentTone(), to: terminal)
+    @ObservationIgnored private var deltaTask: Task<Void, Never>?
+
+    private func refreshFileDeltas() {
+        let paths = tracker.changes.files.map(\.path)
+        deltaTask?.cancel()
+        deltaTask = Task { [weak self] in
+            // Agent 连续改几个文件时合并成一次 git 调用。
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            let deltas = await Git.numstat(paths: paths)
+            guard !Task.isCancelled else { return }
+            self?.fileDeltas = deltas
+        }
     }
 
-    static func currentTone() -> TerminalTone {
-        let settings = SessionIndexer.defaultRoot.deletingLastPathComponent().appendingPathComponent("settings.json")
-        let theme = (try? String(contentsOf: settings, encoding: .utf8)).flatMap(TerminalTone.claudeTheme(fromSettings:))
-        let systemIsDark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        return TerminalTone.resolve(claudeTheme: theme, systemIsDark: systemIsDark)
+    var totalDelta: LineDelta {
+        fileDeltas.values.reduce(LineDelta(added: 0, removed: 0)) {
+            LineDelta(added: $0.added + $1.added, removed: $0.removed + $1.removed)
+        }
     }
 
     /// 从 Finder 启动的 App 未必带 SHELL 环境变量，退回到账户记录里的登录 shell。

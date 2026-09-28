@@ -33,6 +33,27 @@ enum Git {
         }.value
     }
 
+    /// 每个文件相对 HEAD 的增删行数。未被跟踪的新文件按总行数算作新增；取不到的文件不出现在结果里。
+    static func numstat(paths: [String]) async -> [String: LineDelta] {
+        await Task.detached(priority: .utility) {
+            var result: [String: LineDelta] = [:]
+            for path in paths {
+                let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
+                guard FileManager.default.fileExists(atPath: directory) else { continue }
+                var output = run(["diff", "--numstat", "HEAD", "--", path], in: directory)
+                if output.status != 0 { output = run(["diff", "--numstat", "--", path], in: directory) }
+                if let delta = NumStat.parse(output.output).values.first {
+                    result[path] = delta
+                } else if run(["ls-files", "--error-unmatch", "--", path], in: directory).status != 0,
+                          let data = FileManager.default.contents(atPath: path) {
+                    let lines = data.reduce(0) { $1 == 0x0A ? $0 + 1 : $0 }
+                    result[path] = LineDelta(added: max(lines, data.isEmpty ? 0 : 1), removed: 0)
+                }
+            }
+            return result
+        }.value
+    }
+
     private static func run(_ arguments: [String], in directory: String) -> (status: Int32, output: String, error: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")

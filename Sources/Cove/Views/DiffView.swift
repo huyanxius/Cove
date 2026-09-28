@@ -7,36 +7,34 @@ struct DiffView: View {
     let path: String
     let cwd: String
     let revision: Int
-    let onClose: () -> Void
+    let delta: LineDelta?
 
     @State private var result: Git.DiffResult?
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            Rectangle().fill(Color.coveHairline).frame(height: 1)
+            Rectangle().fill(Color.coveLine).frame(height: 1)
             content
         }
-        .background(Color.coveSurface)
+        .background(Color.coveBg)
         .task(id: "\(path)#\(revision)") { result = await Git.diff(path: path) }
     }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(URL(fileURLWithPath: path).lastPathComponent)
-                .font(CoveFont.title(15, weight: .medium))
-                .foregroundStyle(Color.coveInk)
+                .font(CoveFont.ui(14, weight: .semibold))
+                .foregroundStyle(Color.coveT1)
             Text(displayDirectory)
                 .font(CoveFont.mono(11))
-                .foregroundStyle(Color.coveInkMuted)
+                .foregroundStyle(Color.coveT3)
                 .lineLimit(1)
                 .truncationMode(.head)
             Spacer()
-            if case let .diff(lines) = result {
-                let added = lines.filter { $0.kind == .added }.count
-                let removed = lines.filter { $0.kind == .removed }.count
-                Text("+\(added)").foregroundStyle(Color.coveAdded).font(CoveFont.mono(11))
-                Text("−\(removed)").foregroundStyle(Color.coveRemoved).font(CoveFont.mono(11))
+            if let delta {
+                Text("+\(delta.added)").foregroundStyle(Color.coveAdd).font(CoveFont.mono(11))
+                Text("−\(delta.removed)").foregroundStyle(Color.coveDel).font(CoveFont.mono(11))
             }
             Button {
                 Task { result = await Git.diff(path: path) }
@@ -83,8 +81,8 @@ struct DiffView: View {
 
     private func message(_ title: String, detail: String) -> some View {
         VStack(spacing: 6) {
-            Text(title).font(CoveFont.title(15)).foregroundStyle(Color.coveInk)
-            Text(detail).font(.system(size: 12)).foregroundStyle(Color.coveInkMuted)
+            Text(title).font(CoveFont.ui(14, weight: .medium)).foregroundStyle(Color.coveT1)
+            Text(detail).font(CoveFont.ui(12)).foregroundStyle(Color.coveT3)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -110,7 +108,7 @@ private struct DiffRow: View {
                 .frame(width: 18)
                 .foregroundStyle(markerColor)
             Text(line.text.isEmpty ? " " : line.text)
-                .foregroundStyle(line.kind == .hunk || line.kind == .meta ? Color.coveInkMuted : Color.coveInk)
+                .foregroundStyle(line.kind == .hunk || line.kind == .meta ? Color.coveT3 : Color.coveT1)
                 .fixedSize()
                 .padding(.trailing, 24)
         }
@@ -122,7 +120,7 @@ private struct DiffRow: View {
 
     private func number(_ value: Int?) -> some View {
         Text(value.map(String.init) ?? "")
-            .foregroundStyle(Color.coveInkMuted.opacity(0.6))
+            .foregroundStyle(Color.coveT3.opacity(0.6))
             .frame(width: 44, alignment: .trailing)
             .padding(.trailing, 6)
     }
@@ -136,14 +134,14 @@ private struct DiffRow: View {
     }
 
     private var markerColor: Color {
-        line.kind == .added ? .coveAdded : .coveRemoved
+        line.kind == .added ? .coveAdd : .coveDel
     }
 
     private var background: Color {
         switch line.kind {
-        case .added: .coveAdded.opacity(0.11)
-        case .removed: .coveRemoved.opacity(0.11)
-        case .hunk: .coveHarborWash
+        case .added: .coveAdd.opacity(0.11)
+        case .removed: .coveDel.opacity(0.11)
+        case .hunk: .coveAccentDim
         default: .clear
         }
     }
