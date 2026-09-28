@@ -78,4 +78,9 @@ import Testing
         let forTool = #"{"type":"user","message":{"content":"[Request interrupted by user for tool use]"}}"#
         #expect(TranscriptEvent.parse(forTool) == [.interrupted(timestamp: nil)])
     }
+
+    @Test func assistantLinesAlsoReportTheModel() {
+        let line = #"{"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":"hi"}],"stop_reason":null}}"#
+        #expect(TranscriptEvent.parse(line).first == .model("claude-opus-5-5"))
+    }
 }

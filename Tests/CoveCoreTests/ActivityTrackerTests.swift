@@ -100,4 +100,21 @@ import Testing
         tracker.apply(result("t1"))
         #expect(tracker.phase == .awaitingUser(since: nil))
     }
+
+    @Test func remembersModelAndBranch() {
+        var tracker = ActivityTracker()
+        tracker.apply(.humanPrompt(text: "go", timestamp: nil, cwd: "/p", gitBranch: "feat/x"))
+        tracker.apply(.model("claude-opus-5-5"))
+        #expect(tracker.gitBranch == "feat/x")
+        #expect(tracker.model == "claude-opus-5-5")
+        tracker.apply(.model("<synthetic>"))
+        #expect(tracker.model == "claude-opus-5-5")
+    }
+
+    @Test func prettifiesModelIDs() {
+        #expect(ActivityTracker.displayName(forModel: "claude-opus-5-5") == "Opus 5.5")
+        #expect(ActivityTracker.displayName(forModel: "claude-sonnet-5") == "Sonnet 5")
+        #expect(ActivityTracker.displayName(forModel: "claude-haiku-4-5-20251001") == "Haiku 4.5")
+        #expect(ActivityTracker.displayName(forModel: "gpt-x") == "gpt-x")
+    }
 }

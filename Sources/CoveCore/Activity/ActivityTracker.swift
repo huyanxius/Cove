@@ -12,6 +12,10 @@ public struct ActivityTracker: Sendable {
     /// 来自 CLI 的累计统计，包含 Bash 间接造成的改动，所以可能大于 `changes` 能解释的量。
     public private(set) var linesAdded = 0
     public private(set) var linesRemoved = 0
+    /// 最近一条人类消息所在的分支；会话中途切分支时跟着变。
+    public private(set) var gitBranch: String?
+    /// 最近一次真实回复所用的模型 ID。
+    public private(set) var model: String?
 
     private var pending: [(id: String, name: String, input: ToolInput, since: Date?)] = []
 
@@ -19,7 +23,8 @@ public struct ActivityTracker: Sendable {
 
     public mutating func apply(_ event: TranscriptEvent) {
         switch event {
-        case let .humanPrompt(_, timestamp, _, _):
+        case let .humanPrompt(_, timestamp, _, branch):
+            if let branch, !branch.isEmpty, branch != "HEAD" { gitBranch = branch }
             pending.removeAll()
             phase = .thinking(since: timestamp)
 
@@ -44,6 +49,10 @@ public struct ActivityTracker: Sendable {
             } else {
                 phase = .thinking(since: timestamp)
             }
+
+        case let .model(id):
+            // CLI 自己合成的消息（报错、中断提示）标成 `<synthetic>`，不是模型。
+            if !id.hasPrefix("<") { model = id }
 
         case let .interrupted(timestamp):
             // 被打断的工具调用之后可能还会补一条结果，但回合已经结束了。
@@ -72,6 +81,18 @@ public struct ActivityTracker: Sendable {
         default:
             break
         }
+    }
+}
+
+extension ActivityTracker {
+    /// `claude-opus-5-5` → `Opus 5.5`；认不出的原样返回。
+    public static func displayName(forModel id: String) -> String {
+        let parts = id.split(separator: "-").map(String.init)
+        guard parts.first == "claude", parts.count >= 3 else { return id }
+        let family = parts[1].prefix(1).uppercased() + parts[1].dropFirst()
+        // 版本号是紧跟家族名的一到两段纯数字，之后的长数字串是日期戳。
+        let version = parts.dropFirst(2).prefix { $0.count <= 2 && Int($0) != nil }
+        return version.isEmpty ? family : "\(family) \(version.joined(separator: "."))"
     }
 }
 

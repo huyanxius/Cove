@@ -17,6 +17,8 @@ public enum TranscriptEvent: Equatable, Sendable {
     case assistant(AssistantBlock, stopReason: String?, timestamp: Date?)
     /// 工具执行完毕。`taskID` 只在 TaskCreate 的结果里有，用来把任务编号对回调用。
     case toolResult(toolUseID: String, isError: Bool, taskID: String?, timestamp: Date?)
+    /// assistant 行上的模型 ID（如 `claude-opus-5-5`），每行都带，tracker 只留最新的真实模型。
+    case model(String)
     /// 用户按 Esc 打断了回合。CLI 把它记成一条 user 文本 `[Request interrupted by user…]`，
     /// 长得像人话，但不是——不能算进标题和消息数，也意味着轮到人了。
     case interrupted(timestamp: Date?)
@@ -103,7 +105,9 @@ public enum TranscriptEvent: Equatable, Sendable {
                 return nil
             }
         }
-        return events.isEmpty ? [.other] : events
+        guard !events.isEmpty else { return [.other] }
+        if let model = message["model"] as? String { return [.model(model)] + events }
+        return events
     }
 
     nonisolated(unsafe) private static let isoFormatter: ISO8601DateFormatter = {
