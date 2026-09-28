@@ -6,6 +6,7 @@ struct CoveApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
     @AppStorage("appearance") private var appearance = AppearanceChoice.system
+    @AppStorage("onboarded") private var onboarded = false
 
     var body: some Scene {
         // 单窗口：选中哪个会话是全局状态，多窗口共享同一个 model 会互相抢选择。
@@ -14,7 +15,11 @@ struct CoveApp: App {
                 .environment(model)
                 .frame(minWidth: 980, minHeight: 620)
                 .onChange(of: appearance, initial: true) { _, choice in NSApp.appearance = choice.nsAppearance }
+                .sheet(isPresented: Binding(get: { !onboarded }, set: { onboarded = !$0 })) {
+                    OnboardingView().environment(model)
+                }
                 .task {
+                    UsageRelay.install()
                     delegate.model = model
                     model.startRefreshing()
                     model.handleLaunchArguments()
@@ -26,6 +31,8 @@ struct CoveApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("New Session…") { model.chooseDirectoryForNewSession() }
                     .keyboardShortcut("n")
+                Button("New Temporary Session") { model.newScratchSession() }
+                    .keyboardShortcut("n", modifiers: [.command, .option])
             }
             CommandGroup(after: .sidebar) {
                 Picker("Appearance", selection: $appearance) {
@@ -48,6 +55,10 @@ struct CoveApp: App {
                 .keyboardShortcut("w", modifiers: [.command, .shift])
                 .disabled(model.selectedLive == nil)
             }
+        }
+
+        Settings {
+            SettingsView()
         }
     }
 }

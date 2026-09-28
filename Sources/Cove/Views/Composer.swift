@@ -10,25 +10,27 @@ struct Composer: View {
     let session: LiveSession
     @State private var height: CGFloat = ComposerField.minHeight
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         @Bindable var session = session
         VStack(alignment: .leading, spacing: 10) {
             ComposerField(text: $session.draft, height: $height, focusRequest: session.focusRequest,
-                          placeholder: session.isRunning ? "Message Claude…" : "会话已结束",
+                          placeholder: session.isRunning ? "Message \(session.cli == .claude ? "Claude" : session.cli.displayName)…" : "会话已结束",
                           applicationCursor: { session.applicationCursor },
                           onSubmit: submit,
                           onPassthrough: { session.sendRaw($0) })
                 .frame(height: height)
 
             HStack(spacing: 6) {
+                cliMenu.padding(.trailing, 4)
                 // 只有输入框为空时按键才会交给 Claude，所以提示也只在那时出现。
                 if session.draft.isEmpty && session.isRunning {
                     Text("输入框为空时，")
                     KeyCap(text: "↑↓")
                     KeyCap(text: "esc")
                     KeyCap(text: "tab")
-                    Text("交给 Claude 的菜单")
+                    Text("交给 \(session.cli == .claude ? "Claude" : session.cli.displayName) 的菜单")
                 }
                 Spacer(minLength: 8)
                 KeyCap(text: "⇧↩")
@@ -51,6 +53,34 @@ struct Composer: View {
         .overlay(alignment: .top) {
             if colorScheme == .dark { SwiftUI.Color.coveLine.frame(height: 1) }
         }
+    }
+
+    /// 切换 CLI：在同一文件夹里用另一个 CLI 开新会话（运行中的 CLI 换不了，上下文也带不过去）。
+    private var cliMenu: some View {
+        Menu {
+            ForEach(CLIKind.allCases) { cli in
+                Button {
+                    model.switchCLI(of: session, to: cli)
+                } label: {
+                    if cli == session.cli { Label(cli.displayName, systemImage: "checkmark") } else { Text(cli.displayName) }
+                }
+            }
+            Divider()
+            Text("切换会在同一文件夹新开会话")
+        } label: {
+            HStack(spacing: 4) {
+                Text(session.cli.displayName).font(CoveFont.ui(11.5, weight: .medium))
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
+            }
+            .foregroundStyle(SwiftUI.Color.coveT2)
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(SwiftUI.Color.coveKey, in: RoundedRectangle(cornerRadius: 5))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("切换 CLI")
     }
 
     private var sendButton: some View {

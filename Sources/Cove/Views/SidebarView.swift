@@ -13,6 +13,16 @@ struct SidebarView: View {
             search
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
+                    if !model.scratchSessions.isEmpty {
+                        PartitionHeader(title: "临时", systemImage: "bolt")
+                        ForEach(model.scratchSessions) { summary in
+                            SessionRow(summary: summary, live: model.live[summary.id],
+                                       selected: model.selection == summary.id)
+                                .onTapGesture { model.selection = summary.id }
+                                .contextMenu { menu(for: summary) }
+                        }
+                    }
+                    PartitionHeader(title: "项目", systemImage: "folder")
                     ForEach(model.groups) { group in
                         GroupHeader(name: group.name, count: group.sessions.count + group.hiddenCount)
                             .help(group.key)
@@ -75,27 +85,31 @@ struct SidebarView: View {
     private var footer: some View {
         VStack(spacing: 0) {
             SwiftUI.Color.coveLine.frame(height: 1)
-            Button {
-                model.chooseDirectoryForNewSession()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus").font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(SwiftUI.Color.coveAccent)
-                    Text("New Session").font(CoveFont.ui(12.5, weight: .medium))
-                        .foregroundStyle(SwiftUI.Color.coveT1)
-                    Spacer()
-                    Text("⌘N").font(CoveFont.mono(10.5)).foregroundStyle(SwiftUI.Color.coveT3)
-                }
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .background(SwiftUI.Color.coveRaised, in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(SwiftUI.Color.coveRaisedLine))
-                .contentShape(Rectangle())
+            HStack(spacing: 8) {
+                footerButton("项目会话", systemImage: "plus", shortcut: "⌘N") { model.chooseDirectoryForNewSession() }
+                footerButton("临时", systemImage: "bolt", shortcut: "⌥⌘N") { model.newScratchSession() }
             }
-            .buttonStyle(.plain)
             .padding(.horizontal, 12)
             .frame(height: 52)
         }
+    }
+
+    private func footerButton(_ title: String, systemImage: String, shortcut: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage).font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(SwiftUI.Color.coveAccent)
+                Text(title).font(CoveFont.ui(12, weight: .medium)).foregroundStyle(SwiftUI.Color.coveT1)
+                Spacer(minLength: 2)
+                Text(shortcut).font(CoveFont.mono(10)).foregroundStyle(SwiftUI.Color.coveT3)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 30)
+            .background(SwiftUI.Color.coveRaised, in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(SwiftUI.Color.coveRaisedLine))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder private func menu(for summary: SessionSummary) -> some View {
@@ -111,6 +125,24 @@ struct SidebarView: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(summary.id, forType: .string)
         }
+    }
+}
+
+/// 「临时」「项目」两个大分区的标题，比项目分组标题高一级。
+private struct PartitionHeader: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage).font(.system(size: 10, weight: .semibold))
+            Text(title).font(CoveFont.ui(11.5, weight: .semibold))
+            Spacer()
+        }
+        .foregroundStyle(SwiftUI.Color.coveT2)
+        .padding(.leading, 10)
+        .padding(.top, 14)
+        .padding(.bottom, 2)
     }
 }
 
@@ -145,10 +177,19 @@ private struct SessionRow: View {
             .frame(width: 14, height: 17)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(live?.title ?? summary.title)
-                    .font(CoveFont.ui(13))
-                    .foregroundStyle(SwiftUI.Color.coveT1)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(live?.title ?? summary.title)
+                        .font(CoveFont.ui(13))
+                        .foregroundStyle(SwiftUI.Color.coveT1)
+                        .lineLimit(1)
+                    if let live, live.cli != .claude {
+                        Text(live.cli.displayName)
+                            .font(CoveFont.mono(9))
+                            .foregroundStyle(SwiftUI.Color.coveAccent)
+                            .padding(.horizontal, 4)
+                            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(SwiftUI.Color.coveAccentDim))
+                    }
+                }
                 meta
                     .font(CoveFont.ui(11))
                     .lineLimit(1)
