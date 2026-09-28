@@ -68,6 +68,16 @@ public struct ActivityTracker: Sendable {
         }
     }
 
+    /// 回放完历史记录后调用：历史里「正在思考/正在跑工具」只是上次会话结束时的残影，
+    /// 进程是刚重新拉起的，此刻其实在等人。不 settle 的话，状态条会显示「Thinking 88h」。
+    public mutating func settle() {
+        pending.removeAll()
+        switch phase {
+        case .thinking, .running: phase = .awaitingUser(since: nil)
+        case .idle, .awaitingUser: break
+        }
+    }
+
     private mutating func commit(_ name: String, _ input: ToolInput, taskID: String?, at date: Date?) {
         switch name {
         case "Edit", "MultiEdit", "Write":

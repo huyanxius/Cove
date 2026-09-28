@@ -117,4 +117,14 @@ import Testing
         #expect(ActivityTracker.displayName(forModel: "claude-haiku-4-5-20251001") == "Haiku 4.5")
         #expect(ActivityTracker.displayName(forModel: "gpt-x") == "gpt-x")
     }
+
+    @Test func settlingAfterReplayDropsStaleActivity() {
+        var tracker = ActivityTracker()
+        tracker.apply(prompt)
+        tracker.apply(toolUse("t1", "Bash", ["command": "ls"]))
+        tracker.settle()
+        #expect(tracker.phase == .awaitingUser(since: nil))
+        tracker.apply(prompt)
+        #expect(tracker.phase == .thinking(since: nil))
+    }
 }
