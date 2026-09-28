@@ -5,6 +5,8 @@ import Foundation
 enum Git {
     enum DiffResult: Equatable {
         case diff([DiffLine])
+        /// 文件不在 git 仓库里，没有基准可比：把当前全文当作新增展示。
+        case outsideRepository([DiffLine])
         case unchanged
         case notRepository
         case failed(String)
@@ -19,7 +21,12 @@ enum Git {
             if probe.error.contains("not permitted") || probe.error.contains("Unable to read") {
                 return .failed("macOS 没有允许 Cove 读取这个文件夹。到 系统设置 → 隐私与安全性 → 完整磁盘取用 里允许 Cove。")
             }
-            guard probe.status == 0 else { return .notRepository }
+            guard probe.status == 0 else {
+                // --no-index 不需要仓库，拿 /dev/null 当基准就能得到「全文新增」的 diff。
+                guard FileManager.default.fileExists(atPath: path) else { return .notRepository }
+                let whole = run(["diff", "--no-color", "--no-index", "--", "/dev/null", path], in: directory)
+                return whole.output.isEmpty ? .notRepository : .outsideRepository(UnifiedDiff.parse(whole.output))
+            }
 
             // 对比 HEAD 以便把已暂存的改动也算进来；还没有任何提交的仓库没有 HEAD，退回工作区对比。
             var tracked = run(["diff", "--no-color", "HEAD", "--", path], in: directory)

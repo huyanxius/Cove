@@ -65,7 +65,24 @@ struct DiffView: View {
             message("Not a git repository.", detail: "Cove reads diffs from git. Open the file to review it directly.")
         case let .failed(reason):
             message("Couldn't load the diff.", detail: reason)
+        case let .outsideRepository(lines):
+            VStack(spacing: 0) {
+                Text("这个文件不在 git 仓库里，没有旧版本可比，下面是它现在的全文。")
+                    .font(CoveFont.ui(11.5))
+                    .foregroundStyle(Color.coveT3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.coveAccentDim.opacity(0.5))
+                lineList(lines)
+            }
         case let .diff(lines):
+            lineList(lines)
+        }
+    }
+
+    private func lineList(_ lines: [DiffLine]) -> some View {
+        Group {
             ScrollView([.vertical, .horizontal]) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(lines.enumerated()), id: \.offset) { _, line in

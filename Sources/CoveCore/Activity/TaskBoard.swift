@@ -27,6 +27,14 @@ public struct TaskBoard: Equatable, Sendable {
         tasks.append(AgentTask(id: id, subject: subject, status: .pending))
     }
 
+    /// TodoWrite 每次交来整张清单，直接整体替换；编号按顺序生成。
+    mutating func replaceAll(with todos: [ToolInput.TodoItem]) {
+        tasks = todos.enumerated().compactMap { index, todo in
+            guard let status = AgentTask.Status(rawValue: todo.status) else { return nil }
+            return AgentTask(id: "todo-\(index + 1)", subject: todo.content, status: status)
+        }
+    }
+
     mutating func update(id: String, status: String?, subject: String?) {
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
         if status == "deleted" {

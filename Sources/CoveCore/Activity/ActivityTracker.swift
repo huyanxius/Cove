@@ -86,6 +86,8 @@ public struct ActivityTracker: Sendable {
             if let path = input["notebook_path"] { changes.record(path: path, isWrite: false, at: date) }
         case "TaskCreate":
             if let taskID { board.add(id: taskID, subject: input["subject"] ?? "Task \(taskID)") }
+        case "TodoWrite":
+            board.replaceAll(with: input.todos)
         case "TaskUpdate":
             if let id = input["taskId"] { board.update(id: id, status: input["status"], subject: input["subject"]) }
         default:

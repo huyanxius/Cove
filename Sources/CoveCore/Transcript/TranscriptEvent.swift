@@ -131,15 +131,27 @@ public enum AssistantBlock: Equatable, Sendable {
 /// 嵌套结构（比如 MultiEdit 的 edits 数组）一概不保留，免得把整段代码搬进内存。
 public struct ToolInput: Equatable, Sendable {
     public var fields: [String: String]
+    /// TodoWrite 的整张清单（它每次都重写全部条目）；其他工具为空。
+    public var todos: [TodoItem] = []
+
+    public struct TodoItem: Equatable, Sendable {
+        public let content: String
+        public let status: String
+    }
 
     public init(_ fields: [String: String]) { self.fields = fields }
 
     init(_ raw: Any?) {
         var fields: [String: String] = [:]
-        for (key, value) in raw as? [String: Any] ?? [:] {
+        let object = raw as? [String: Any] ?? [:]
+        for (key, value) in object {
             if let string = value as? String { fields[key] = string }
         }
         self.fields = fields
+        todos = (object["todos"] as? [[String: Any]] ?? []).compactMap { item in
+            guard let content = item["content"] as? String else { return nil }
+            return TodoItem(content: content, status: item["status"] as? String ?? "pending")
+        }
     }
 
     public subscript(_ key: String) -> String? { fields[key] }

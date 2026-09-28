@@ -19,6 +19,7 @@ private struct GeneralSettings: View {
     @AppStorage("defaultCLI") private var defaultCLI = CLIKind.claude.rawValue
     @AppStorage("showUsage") private var showUsage = true
     @AppStorage("showPet") private var showPet = true
+    @AppStorage("hideCLIPrompt") private var hideCLIPrompt = true
     @AppStorage("onboarded") private var onboarded = true
 
     var body: some View {
@@ -33,6 +34,9 @@ private struct GeneralSettings: View {
                 ForEach(CLIKind.allCases) { Text($0.displayName).tag($0.rawValue) }
             }
 
+            Toggle("隐藏 CLI 自带的输入框", isOn: $hideCLIPrompt)
+            Text("用 Cove 的输入框时，把终端底部 claude / codex / agy 自己的输入区和状态栏遮住；弹出选择菜单时会自动露出来。")
+                .font(.caption).foregroundStyle(.secondary)
             Toggle("右下角显示用量圆环", isOn: $showUsage)
             Toggle("右下角显示 Claude 小螃蟹", isOn: $showPet)
 

@@ -127,4 +127,14 @@ import Testing
         tracker.apply(prompt)
         #expect(tracker.phase == .thinking(since: nil))
     }
+
+    @Test func readsTodoWriteListsToo() {
+        let line = #"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"w1","name":"TodoWrite","input":{"todos":[{"content":"Write parser","status":"completed","activeForm":"Writing parser"},{"content":"Wire UI","status":"in_progress","activeForm":"Wiring UI"},{"content":"Ship","status":"pending","activeForm":"Shipping"}]}}],"stop_reason":"tool_use"}}"#
+        var tracker = ActivityTracker()
+        for event in TranscriptEvent.parse(line) { tracker.apply(event) }
+        tracker.apply(result("w1"))
+        #expect(tracker.board.tasks.map(\.subject) == ["Write parser", "Wire UI", "Ship"])
+        #expect(tracker.board.completedCount == 1)
+        #expect(tracker.board.current?.subject == "Wire UI")
+    }
 }
