@@ -26,6 +26,11 @@ import Testing
         #expect(command.args.last?.hasSuffix("claude '--resume' 'a b'") == true)
     }
 
+    @Test func launchesOtherProgramsTheSameWay() {
+        let command = ClaudeLaunch.shellCommand(shell: "/bin/zsh", program: "codex", arguments: [])
+        #expect(command.args.last?.hasSuffix("; codex") == true)
+    }
+
     @Test func clearsShellStartupOutputBeforeClaudeStarts() {
         // .zshrc 里打印的横幅、提示不该留在会话的滚动缓冲里。
         let line = ClaudeLaunch.shellCommand(shell: "/bin/zsh", claudeArguments: []).args.last ?? ""

@@ -42,8 +42,13 @@ public enum ClaudeLaunch {
     /// `claude` 本身不加引号，否则 shell 不会做 alias 展开。
     /// 启动前先清屏并清掉滚动缓冲：交互 shell 读 .zshrc 时打印的横幅和提示与这个会话无关。
     public static func shellCommand(shell: String, claudeArguments: [String]) -> (executable: String, args: [String]) {
-        let claude = (["claude"] + claudeArguments.map(shellQuote)).joined(separator: " ")
-        return (shell, ["-l", "-i", "-c", #"printf '\033[H\033[2J\033[3J'; "# + claude])
+        shellCommand(shell: shell, program: "claude", arguments: claudeArguments)
+    }
+
+    /// `program` 同样不加引号（codex、agy 也可能是 alias）。
+    public static func shellCommand(shell: String, program: String, arguments: [String]) -> (executable: String, args: [String]) {
+        let line = ([program] + arguments.map(shellQuote)).joined(separator: " ")
+        return (shell, ["-l", "-i", "-c", #"printf '\033[H\033[2J\033[3J'; "# + line])
     }
 
     public static func shellQuote(_ value: String) -> String {
