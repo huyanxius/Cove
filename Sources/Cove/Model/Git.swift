@@ -15,7 +15,11 @@ enum Git {
         await Task.detached(priority: .userInitiated) {
             let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
             guard FileManager.default.fileExists(atPath: directory) else { return .failed("Folder no longer exists.") }
-            guard run(["rev-parse", "--is-inside-work-tree"], in: directory).status == 0 else { return .notRepository }
+            let probe = run(["rev-parse", "--is-inside-work-tree"], in: directory)
+            if probe.error.contains("not permitted") || probe.error.contains("Unable to read") {
+                return .failed("macOS 没有允许 Cove 读取这个文件夹。到 系统设置 → 隐私与安全性 → 完整磁盘取用 里允许 Cove。")
+            }
+            guard probe.status == 0 else { return .notRepository }
 
             // 对比 HEAD 以便把已暂存的改动也算进来；还没有任何提交的仓库没有 HEAD，退回工作区对比。
             var tracked = run(["diff", "--no-color", "HEAD", "--", path], in: directory)
@@ -27,6 +31,9 @@ enum Git {
                FileManager.default.fileExists(atPath: path) {
                 let untracked = run(["diff", "--no-color", "--no-index", "--", "/dev/null", path], in: directory)
                 if !untracked.output.isEmpty { return .diff(UnifiedDiff.parse(untracked.output)) }
+            }
+            if tracked.error.contains("not permitted") || tracked.error.contains("Unable to read current working directory") {
+                return .failed("macOS 没有允许 Cove 读取这个文件夹。到 系统设置 → 隐私与安全性 → 完整磁盘取用 里允许 Cove。")
             }
             if tracked.status != 0 { return .failed(tracked.error.isEmpty ? "git diff failed." : tracked.error) }
             return .unchanged

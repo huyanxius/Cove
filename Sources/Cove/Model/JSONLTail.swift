@@ -15,8 +15,12 @@ final class JSONLTail: @unchecked Sendable {
     private var tracker = ActivityTracker()
     private let locate: @Sendable () -> URL?
     private let onUpdate: @Sendable (ActivityTracker) -> Void
+    /// 恢复旧会话时为 true：第一次读到的是历史，读完要 settle 掉残留的「进行中」。
+    private var settleAfterFirstRead: Bool
 
-    init(locate: @escaping @Sendable () -> URL?, onUpdate: @escaping @Sendable (ActivityTracker) -> Void) {
+    init(settleAfterFirstRead: Bool, locate: @escaping @Sendable () -> URL?,
+         onUpdate: @escaping @Sendable (ActivityTracker) -> Void) {
+        self.settleAfterFirstRead = settleAfterFirstRead
         self.locate = locate
         self.onUpdate = onUpdate
     }
@@ -66,6 +70,10 @@ final class JSONLTail: @unchecked Sendable {
         // 最后一行可能还没写完，留到下一轮。
         remainder = buffer.subdata(in: consumed..<buffer.count)
         buffer = Data()
+        if settleAfterFirstRead {
+            tracker.settle()
+            settleAfterFirstRead = false
+        }
         onUpdate(tracker)
     }
 }

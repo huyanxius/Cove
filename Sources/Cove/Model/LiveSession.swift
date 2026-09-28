@@ -58,7 +58,9 @@ final class LiveSession: Identifiable {
         processObserver.session = self
         terminal.processDelegate = processObserver
 
-        tail = JSONLTail(locate: { [id] in indexer.transcriptURL(for: id) }) { [weak self] tracker in
+        let isResume: Bool
+        if case .resume = mode { isResume = true } else { isResume = false }
+        tail = JSONLTail(settleAfterFirstRead: isResume, locate: { [id] in indexer.transcriptURL(for: id) }) { [weak self] tracker in
             DispatchQueue.main.async { self?.tracker = tracker }
         }
     }
@@ -70,9 +72,18 @@ final class LiveSession: Identifiable {
         environment.append("SHELL=\(shell)")
         terminal.startProcess(executable: command.executable, args: command.args,
                               environment: environment, execName: nil, currentDirectory: cwd)
+        tail?.start()
+        // 工作目录不可访问（最常见：macOS 没给 Cove「桌面/文稿」权限）时进程根本起不来，
+        // SwiftTerm 不报错，终端就是一片空白。这里把原因直接写进终端。
+        guard terminal.process?.running == true else {
+            isRunning = false
+            exitCode = nil
+            terminal.feed(text: "Cove 无法在 \(cwd) 启动 claude。\r\n"
+                + "如果它在「桌面」「文稿」或「下载」里，请到 系统设置 → 隐私与安全性 → 完整磁盘取用 里允许 Cove，然后重开这个会话。\r\n")
+            return
+        }
         isRunning = true
         exitCode = nil
-        tail?.start()
     }
 
     /// 把输入框内容作为一条消息交给 claude。粘贴和回车分两次写，见 `PasteEncoder`。
