@@ -26,6 +26,14 @@ import Testing
         #expect(u.apiDuration == 240)
     }
 
+    @Test func mergingKeepsLastKnownValues() {
+        var old = UsageSnapshot(); old.fiveHourPercent = 45; old.sevenDayPercent = 33; old.contextPercent = 5
+        var new = UsageSnapshot(); new.contextPercent = 6; new.modelName = "Opus"
+        let merged = new.merged(over: old)
+        #expect(merged.fiveHourPercent == 45 && merged.sevenDayPercent == 33)
+        #expect(merged.contextPercent == 6 && merged.modelName == "Opus")
+    }
+
     @Test func missingFieldsStayNil() {
         let u = UsageSnapshot.parse(Data(#"{"model":{"display_name":"Sonnet 5"}}"#.utf8))
         #expect(u?.modelName == "Sonnet 5")
