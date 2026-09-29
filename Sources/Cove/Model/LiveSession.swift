@@ -3,7 +3,7 @@ import CoveCore
 import Observation
 import SwiftTerm
 
-/// 一个打开着的会话：终端视图、里面的 CLI 进程，以及（claude 才有的）从 JSONL 推断出的实时状态和用量。
+/// 一个打开着的会话：终端视图、里面的 CLI 进程，以及可用的实时状态和用量。
 ///
 /// 终端视图由它持有而不是由 SwiftUI 持有，所以切到别的会话时视图只是被摘下来，
 /// 进程照跑；切回来再挂上去，滚动位置和屏幕内容都还在。
@@ -35,7 +35,7 @@ final class LiveSession: Identifiable {
     }
     /// 每个改动文件相对 HEAD 的增删行数，键是绝对路径。随 Agent 的编辑刷新。
     private(set) var fileDeltas: [String: LineDelta] = [:]
-    /// 最近一次 statusLine 落盘的用量；只有 claude 会话有。
+    /// 当前会话最近一次报告的用量；Claude 和 Codex 的来源不同。
     private(set) var usage: UsageSnapshot?
     private(set) var isRunning = false
     /// CLI 画出第一屏之前为 false，中栏这段时间显示咖啡杯加载动画。

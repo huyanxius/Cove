@@ -356,10 +356,9 @@ final class AppModel {
 
     var totalSessionCount: Int { sessions.count }
 
-    /// 右下角显示的用量：只来自当前选中的 claude 会话；codex/agy 没有这份数据，就显示空。
+    /// 右下角只显示当前会话的用量，避免把别的 CLI 的额度混进来。
     var latestUsage: UsageSnapshot? {
-        guard let session = selectedLive, session.cli == .claude else { return nil }
-        return session.usage
+        selectedLive?.usage
     }
 
     /// 外观变了：claude 的主题在启动时就定了，只能重开会话来跟上。空闲的立刻用同一 ID 重开

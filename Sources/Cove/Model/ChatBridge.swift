@@ -200,6 +200,12 @@ final class ChatBridge {
         for reply in step.replies { write(reply) }
         if !step.events.isEmpty { handle(step.events) }
         if controls != proto.controls { controls = proto.controls }
+        if cli == .codex, let model = controls.model {
+            var usage = UsageSnapshot()
+            usage.modelID = model
+            usage.modelName = controls.models.first { $0.value == model }?.displayName ?? model
+            onUsage?(usage)
+        }
         if externalID != proto.externalID { externalID = proto.externalID }
     }
 
