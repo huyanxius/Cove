@@ -385,3 +385,24 @@ import Testing
         #expect(boldText(value) == ["两处"])
     }
 }
+
+@Suite struct RevealTimelineTests {
+    @Test func laterCharactersNeverAppearFirst() {
+        // 第二批在第一批还没排完时就到了。
+        let times = RevealTimeline.reveal(batches: [(count: 20, arrived: 0), (count: 5, arrived: 0.05)])
+        #expect(times.count == 25)
+        #expect(zip(times, times.dropFirst()).allSatisfy { $0 <= $1 })
+    }
+
+    @Test func nothingAppearsBeforeItArrives() {
+        let times = RevealTimeline.reveal(batches: [(count: 2, arrived: 0), (count: 2, arrived: 5)])
+        #expect(times[2] == 5)
+        #expect(times[0] == 0)
+    }
+
+    @Test func backlogIsCaughtUp() {
+        // 一次到了 500 个字：不能按 20ms 一个排到 10 秒之后。
+        let times = RevealTimeline.reveal(batches: [(count: 500, arrived: 0)])
+        #expect(times.last! < 2.5)
+    }
+}
