@@ -5,8 +5,19 @@ import Testing
 
 /// 用真的 SQLite 文件喂给索引器：表结构只建它读到的那几列，和 codex / agy 的库同名同型。
 @Suite struct ExternalSessionsTests {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("cove-ext-\(UUID().uuidString)")
+
+    /// 造一个真实存在的 rollout 文件，返回路径。
+    func rollout(_ id: String) -> String {
+        let url = folder.appendingPathComponent("rollout-\(id).jsonl")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: url.path, contents: Data())
+        return url.path
+    }
+
     func database(_ statements: [String]) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("cove-\(UUID().uuidString).db")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("summaries.db")
         var db: OpaquePointer?
         #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
         defer { sqlite3_close(db) }
@@ -18,13 +29,14 @@ import Testing
         let url = try database([
             """
             CREATE TABLE threads (id TEXT, cwd TEXT, title TEXT, first_user_message TEXT, updated_at INTEGER,
-              updated_at_ms INTEGER, archived INTEGER, has_user_event INTEGER, thread_source TEXT, git_branch TEXT)
+              updated_at_ms INTEGER, archived INTEGER, has_user_event INTEGER, thread_source TEXT, git_branch TEXT, rollout_path TEXT)
             """,
-            "INSERT INTO threads VALUES ('a', '/p', '修登录', '修登录\n详细说明', 1790000000, 1790000000500, 0, 1, 'user', 'main')",
-            "INSERT INTO threads VALUES ('b', '/p', '', '只有首条消息', 1790000100, NULL, 0, 1, 'user', NULL)",
-            "INSERT INTO threads VALUES ('sub', '/p', 'x', 'x', 1790000200, NULL, 0, 1, 'subagent', NULL)",
-            "INSERT INTO threads VALUES ('old', '/p', 'x', 'x', 1790000300, NULL, 1, 1, 'user', NULL)",
-            "INSERT INTO threads VALUES ('empty', '/p', '', '', 1790000400, NULL, 0, 0, 'user', NULL)",
+            "INSERT INTO threads VALUES ('a', '/p', '修登录', '修登录\n详细说明', 1790000000, 1790000000500, 0, 1, 'user', 'main', '\(rollout("a"))')",
+            "INSERT INTO threads VALUES ('b', '/p', '', '只有首条消息', 1790000100, NULL, 0, 1, 'user', NULL, '\(rollout("b"))')",
+            "INSERT INTO threads VALUES ('sub', '/p', 'x', 'x', 1790000200, NULL, 0, 1, 'subagent', NULL, '\(rollout("sub"))')",
+            "INSERT INTO threads VALUES ('old', '/p', 'x', 'x', 1790000300, NULL, 1, 1, 'user', NULL, '\(rollout("old"))')",
+            "INSERT INTO threads VALUES ('empty', '/p', '', '', 1790000400, NULL, 0, 0, 'user', NULL, '\(rollout("empty"))')",
+            "INSERT INTO threads VALUES ('gone', '/p', '已删', '已删', 1790000500, NULL, 0, 1, 'user', NULL, '/nonexistent/gone.jsonl')",
         ])
         let sessions = CodexSessions.scan(database: url)
         #expect(sessions.map(\.id) == ["b", "a"])
@@ -44,9 +56,14 @@ import Testing
             #"INSERT INTO conversation_summaries VALUES ('c1', '', '你好', '["file:///Users/me/Application%20Support/x"]', '2026-09-28 12:01:48.48352+00:00', 0)"#,
             #"INSERT INTO conversation_summaries VALUES ('c2', 'Token Quota', 'p', '', '2026-09-16 18:51:18+00:00', 0)"#,
             #"INSERT INTO conversation_summaries VALUES ('child', 't', 'p', '', '2026-09-29 00:00:00+00:00', 1)"#,
+            #"INSERT INTO conversation_summaries VALUES ('deleted', 't', 'p', '', '2026-09-30 00:00:00+00:00', 0)"#,
         ])
+        let conversations = url.deletingLastPathComponent().appendingPathComponent("conversations")
+        try FileManager.default.createDirectory(at: conversations, withIntermediateDirectories: true)
+        for id in ["c1", "c2", "child"] { FileManager.default.createFile(atPath: conversations.appendingPathComponent("\(id).db").path, contents: Data()) }
         let sessions = AgySessions.scan(database: url)
         #expect(sessions.map(\.id) == ["c1", "c2"])
+        #expect(sessions[0].fileURL.lastPathComponent == "c1.db")
         #expect(sessions[0].cwd == "/Users/me/Application Support/x")
         #expect(sessions[0].title == "你好")
         #expect(sessions[0].cli == .agy)
