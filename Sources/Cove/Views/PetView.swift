@@ -46,7 +46,7 @@ struct PetPanel: View {
 
     private var caption: String {
         switch mood {
-        case .working: "干活中"
+        case .working, .typing: "干活中"
         case .thinking: "想一想……"
         case .waving: "等你回复"
         case .idle: "待命"
@@ -89,7 +89,8 @@ struct PetPanel: View {
 /// 动作是连续的：按显示刷新率拿到时间 t，身体的起伏、压扁拉长、倾斜、眼珠朝向、腿和手的
 /// 摆动都是 t 的函数，而不是几张图轮播——像素是方的，运动是顺的，灵动感来自这里。
 struct PixelCrab: View {
-    enum Mood: Equatable { case working, thinking, waving, idle, sleeping }
+    /// `typing` 是侧栏里「正在干活」用的：坐着不跳，两只手在身前的小键盘上交替敲。
+    enum Mood: Equatable { case working, typing, thinking, waving, idle, sleeping }
     let mood: Mood
 
     private static let shell = SwiftUI.Color(nsColor: NSColor(hex: 0xD97757))
@@ -158,6 +159,14 @@ struct PixelCrab: View {
             p.rightArmUp = CGFloat(max(0, -sin(t * 13)))
             p.look = CGPoint(x: 1, y: 0)
             p.eyesShut = blinking
+        case .typing:
+            // 两手交替落键，一秒大约七下；身体随着敲击轻轻一沉。
+            let beat = sin(t * 22)
+            p.leftArmUp = -CGFloat(max(0, beat)) * 0.9
+            p.rightArmUp = -CGFloat(max(0, -beat)) * 0.9
+            p.squash = 0.035 * CGFloat(abs(beat))
+            p.look = CGPoint(x: 0, y: 1)
+            p.eyesShut = blinking
         case .thinking:
             p.tilt = sin(t * 1.8) * 5
             p.squash = 0.03 * sin(t * 1.8)
@@ -211,7 +220,16 @@ struct PixelCrab: View {
         for (y, row) in Self.torso.enumerated() {
             for (x, char) in row.enumerated() where char == "O" { cell(CGFloat(x), CGFloat(y), Self.shell, in: body) }
         }
-        // 手：身体两侧第 2 行各两格，抬起时往上挪。
+        // 敲键盘时身前一排小键盘，挡住腿；落键的那一侧有一颗键闪成强调色。
+        if mood == .typing {
+            for col in stride(from: CGFloat(2), through: 15, by: 1) {
+                let lit = (col < 9 ? p.leftArmUp : p.rightArmUp) < -0.4
+                    && Int(col) == (col < 9 ? 3 : 12) + Int(Self.noise(Int(t * 7)) * 3)
+                let key = CGRect(x: (col - 9) * w + w * 0.08, y: (3.9 - 4) * h, width: w * 0.84, height: h * 0.55)
+                body.fill(Path(key), with: .color(lit ? .coveAccent : SwiftUI.Color.coveT3.opacity(0.55)))
+            }
+        }
+        // 手：身体两侧第 2 行各两格，抬起时往上挪（敲键盘时是往下落）。
         cell(1, 2 - p.leftArmUp, Self.shell, in: body); cell(2, 2 - p.leftArmUp, Self.shell, in: body)
         cell(15, 2 - p.rightArmUp, Self.shell, in: body); cell(16, 2 - p.rightArmUp, Self.shell, in: body)
         // 眼睛：闭眼时是一道细线。
@@ -257,7 +275,7 @@ struct PixelCrab: View {
                     .foregroundColor(SwiftUI.Color.coveT3.opacity(1 - phase))
                 ctx.draw(text, at: CGPoint(x: head.x + (5 + phase * 4) * w, y: head.y - phase * h * 2.5))
             }
-        case .idle:
+        case .idle, .typing:
             break
         }
     }
