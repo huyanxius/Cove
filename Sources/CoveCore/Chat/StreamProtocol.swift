@@ -25,6 +25,8 @@ public enum StreamEvent: Equatable, Sendable {
     case permissionMode(String)
     /// 控制请求被拒绝，比如没开放跳过权限时切到 `bypassPermissions`。
     case controlError(String)
+    /// 不属于任何一方的提示，原样显示（codex 的 error 通知、Cove 回绝了的请求）。
+    case notice(String)
     /// 5h / 7d 额度。只填 `UsageSnapshot` 里的额度字段。
     case usage(UsageSnapshot)
     /// 上下文占用：`tokens` 是最近一次请求送进模型的总量（输入 + 缓存读 + 缓存写），来自 assistant 行；

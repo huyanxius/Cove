@@ -77,6 +77,8 @@ public struct ChatLog: Sendable {
             apply(transcript)
         case let .controlError(message):
             append(.notice("操作没有生效：\(message)"))
+        case let .notice(message):
+            append(.notice(message))
         case .commands, .usage, .sessionInfo, .permissionMode, .context:
             break
         }

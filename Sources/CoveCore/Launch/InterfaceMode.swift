@@ -2,7 +2,7 @@
 ///
 /// 前三档底下都是终端里的原版 TUI，只差在 Cove 的输入框放不放、CLI 自带的输入区遮不遮，
 /// 随时切、就地生效。第四档换成 stream-json 进程（见 `StreamEvent`），切进切出要按同一个
-/// 会话 ID 重开。第四档目前只有 claude 有；codex / agy 选了它按第三档显示。
+/// 会话 ID 重开。三个 CLI 各用自己的结构化协议（见 `ChatProtocol`）。
 public enum InterfaceMode: String, CaseIterable, Identifiable, Sendable {
     /// 完全原生：只有终端，键盘直接进 CLI。
     case native
@@ -17,7 +17,7 @@ public enum InterfaceMode: String, CaseIterable, Identifiable, Sendable {
 
     /// 这一档下某个 CLI 的会话该用哪种进程。
     public func surface(for cli: CLIKind) -> Surface {
-        self == .cove && cli == .claude ? .chat : .terminal
+        self == .cove ? .chat : .terminal
     }
 
     /// 终端界面下要不要把 CLI 自带的输入区遮住。第四档回落到终端的 CLI 按第三档处理。
