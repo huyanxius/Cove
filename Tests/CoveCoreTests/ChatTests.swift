@@ -43,6 +43,17 @@ import Testing
         #expect(StreamEvent.parse(mode) == [.permissionMode("plan")])
     }
 
+    @Test func surfacesRejectedControlRequestsAndStatusModes() {
+        let error = #"{"type":"control_response","response":{"subtype":"error","request_id":"m","error":"Cannot set permission mode to bypassPermissions"}}"#
+        #expect(StreamEvent.parse(error) == [.controlError("Cannot set permission mode to bypassPermissions")])
+        let status = #"{"type":"system","subtype":"status","status":null,"permissionMode":"plan"}"#
+        #expect(StreamEvent.parse(status) == [.permissionMode("plan")])
+        var log = ChatLog()
+        log.apply(.controlError("nope"))
+        #expect(log.items.last?.kind == .notice("操作没有生效：nope"))
+        #expect(ClaudeLaunch.streamArguments(.new(sessionID: "a"), allowBypass: true).contains("--allow-dangerously-skip-permissions"))
+    }
+
     @Test func parsesRateLimitsAndResult() {
         let limits = #"{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":0.15,"resetsAt":1790686800},"seven_day":{"utilization":0.02,"resetsAt":1791223200}}}}"#
         guard case let .usage(usage) = StreamEvent.parse(limits).first else { Issue.record("expected usage"); return }
@@ -190,18 +201,93 @@ import Testing
 }
 
 @Suite struct MarkdownBlocksTests {
-    @Test func splitsParagraphsAndFencedCode() {
-        let text = "第一段\n还是第一段\n\n```swift\nlet a = 1\n\nlet b = 2\n```\n# 标题\n- 一\n- 二"
+    typealias S = MarkdownBlocks.Segment
+
+    @Test func splitsParagraphsHeadingsAndCode() {
+        let text = "第一段\n还是第一段\n\n```swift\nlet a = 1\n\nlet b = 2\n```\n## 标题"
         #expect(MarkdownBlocks.split(text) == [
-            .paragraph("第一段\n还是第一段"),
-            .code(language: "swift", "let a = 1\n\nlet b = 2"),
-            .heading("标题"),
-            .paragraph("- 一\n- 二"),
+            .paragraph(S("第一段\n还是第一段", start: 0)),
+            .code(language: "swift", S("let a = 1\n\nlet b = 2", start: 20)),
+            .heading(level: 2, S("标题", start: 48)),
         ])
     }
 
+    @Test func parsesListsTasksQuotesAndRules() {
+        let text = "- 一\n  - 二\n1. 三\n- [ ] 未完成\n- [x] 完成\n\n> 引用\n> 第二行\n\n---"
+        let blocks = MarkdownBlocks.split(text)
+        guard case let .list(items) = blocks[0] else { Issue.record("expected list"); return }
+        #expect(items.map(\.marker) == [.bullet, .bullet, .number(1), .task(done: false), .task(done: true)])
+        #expect(items.map(\.level) == [0, 1, 0, 0, 0])
+        #expect(items.map(\.text.text) == ["一", "二", "三", "未完成", "完成"])
+        guard case let .quote(lines) = blocks[1] else { Issue.record("expected quote"); return }
+        #expect(lines.map(\.text) == ["引用", "第二行"])
+        #expect(blocks[2] == .rule)
+    }
+
+    @Test func parsesTablesWithAlignment() {
+        let text = "| 功能 | 状态 | 备注 |\n|:---|:---:|---:|\n| 流式 | 正常 | 左 |\n| 长 | 测试 |"
+        #expect(MarkdownBlocks.split(text) == [
+            .table(header: ["功能", "状态", "备注"], alignments: [.leading, .center, .trailing],
+                   rows: [["流式", "正常", "左"], ["长", "测试", ""]]),
+        ])
+    }
+
+    @Test func boldLineIsNotAList() {
+        #expect(MarkdownBlocks.split("**粗体**开头") == [.paragraph(S("**粗体**开头", start: 0))])
+    }
+
     @Test func unterminatedFenceStillRendersAsCode() {
-        #expect(MarkdownBlocks.split("```\nwhile true") == [.code(language: "", "while true")])
+        #expect(MarkdownBlocks.split("```\nwhile true") == [.code(language: "", S("while true", start: 4))])
+    }
+
+    /// 每段文字按起点取回原文，必须一字不差——流式渐显靠它对齐到达时间。
+    @Test func segmentsPointBackIntoTheSource() {
+        let text = "ab\n\n  ## 标题 \n- [ ] 任务\n> 引用\n```swift\nlet a = 1\n```\n第一行\n第二行"
+        let characters = Array(text)
+        var segments: [S] = []
+        for block in MarkdownBlocks.split(text) {
+            switch block {
+            case let .paragraph(s), let .heading(_, s), let .code(_, s): segments.append(s)
+            case let .list(items): segments += items.map(\.text)
+            case let .quote(lines): segments += lines
+            case .table, .rule: break
+            }
+        }
+        #expect(segments.count == 6)
+        for segment in segments {
+            #expect(String(characters[segment.start..<segment.start + segment.text.count]) == segment.text)
+        }
+    }
+}
+
+@Suite struct CodeHighlighterTests {
+    func kinds(_ code: String, _ language: String) -> [String: CodeHighlighter.Kind] {
+        let chars = Array(code)
+        var result: [String: CodeHighlighter.Kind] = [:]
+        for span in CodeHighlighter.spans(code, language: language) { result[String(chars[span.range])] = span.kind }
+        return result
+    }
+
+    @Test func highlightsCommonTokens() {
+        let found = kinds("function greet(name) {\n  return `hi ${name}`; // 注释\n}\nlet n = 42", "ts")
+        #expect(found["function"] == .keyword)
+        #expect(found["return"] == .keyword)
+        #expect(found["`hi ${name}`"] == .string)
+        #expect(found["// 注释"] == .comment)
+        #expect(found["42"] == .number)
+    }
+
+    @Test func hashIsACommentOnlyWhereItShouldBe() {
+        #expect(kinds("x = 1 # note", "python")["# note"] == .comment)
+        #expect(kinds("a # b", "swift")["# b"] == nil)
+        #expect(CodeHighlighter.spans("plain text block", language: "").isEmpty)
+    }
+
+    @Test func diffColorsWholeLines() {
+        let found = kinds("@@ -1 +1 @@\n- old line\n+ new line\n same", "diff")
+        #expect(found["- old line"] == .removed)
+        #expect(found["+ new line"] == .added)
+        #expect(found["@@ -1 +1 @@"] == .hunk)
     }
 }
 
