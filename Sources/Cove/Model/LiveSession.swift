@@ -74,7 +74,10 @@ final class LiveSession: Identifiable {
         self.cwd = worktree.map { ClaudeLaunch.worktreePath(repoRoot: $0.repoRoot, name: $0.name) } ?? cwd
         self.cli = cli
         self.surface = surface
-        chat = surface == .chat ? ChatBridge() : nil
+        let resume: String? = { if case let .resume(id) = mode { return id } else { return nil } }()
+        chat = surface == .chat
+            ? ChatBridge(cli: cli, protocol: Self.chatProtocol(for: cli, cwd: worktree.map { $0.repoRoot } ?? cwd, resume: resume))
+            : nil
         git = GitRepo(cwd: cwd)
         self.indexer = indexer
         self.title = title
@@ -131,6 +134,8 @@ final class LiveSession: Identifiable {
     }
 
     /// Cove 界面：恢复的会话先从 JSONL 读出历史（stream-json 不会重放），再拉起进程。
+    /// Cove 界面：按 CLI 选协议和启动命令。claude 恢复时先从 JSONL 读出历史（stream-json
+    /// 不重放）；codex 的历史由 `thread/resume` 带回来；agy 的历史存在它自己的库里，这一版不读。
     private func startChat() {
         guard let chat else { return }
         chat.onExit = { [weak self] code in self?.processDidExit(code) }
@@ -143,25 +148,51 @@ final class LiveSession: Identifiable {
         exitCode = nil
         let resumeID = self.resumeID
         let indexer = indexer
+        let cli = cli
         Task { [weak self] in
-            let history = await Task.detached(priority: .userInitiated) { () -> ChatLog in
-                guard let resumeID, let url = indexer.transcriptURL(for: resumeID),
-                      let text = try? String(contentsOf: url, encoding: .utf8) else { return ChatLog() }
+            let history = await Task.detached(priority: .userInitiated) { () -> ChatLog? in
+                guard cli == .claude, let resumeID, let url = indexer.transcriptURL(for: resumeID),
+                      let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
                 return ChatLog(history: text.split(separator: "\n"))
             }.value
             guard let self else { return }
-            chat.replaceHistory(history)
+            if let history { chat.replaceHistory(history) }
+            if cli == .agy, resumeID != nil {
+                chat.note("已恢复这个 Antigravity 会话。之前的对话不在这里显示，需要回看可以切到终端档位。")
+            }
             var environment = ProcessInfo.processInfo.environment
             environment["COVE_SESSION_ID"] = self.id
-            let allowBypass = UserDefaults.standard.bool(forKey: "allowBypassPermissions")
-            let arguments = ClaudeLaunch.streamArguments(self.mode, allowBypass: allowBypass) + self.worktreeArguments
-            if chat.start(shell: Self.loginShell(), arguments: arguments, cwd: self.launchDirectory, environment: environment) {
+            let (program, arguments) = self.chatCommand(resumeID: resumeID)
+            if chat.start(shell: Self.loginShell(), program: program, arguments: arguments,
+                          cwd: self.launchDirectory, environment: environment) {
                 self.hasOutput = true
                 self.tail?.start()
-                self.startAccountLimits()
+                if cli == .claude { self.startAccountLimits() }
             } else {
                 self.processDidExit(nil)
             }
+        }
+    }
+
+    private func chatCommand(resumeID: String?) -> (String, [String]) {
+        switch cli {
+        case .claude:
+            let allowBypass = UserDefaults.standard.bool(forKey: "allowBypassPermissions")
+            return ("claude", ClaudeLaunch.streamArguments(mode, allowBypass: allowBypass) + worktreeArguments)
+        case .codex:
+            return ("codex", ["app-server"])
+        case .agy:
+            // `--print` 要带一个参数（这里是空串），而且要放在最后：agy 会把紧跟在它后面的东西当成提示词。
+            let resume = resumeID.map { ["--conversation", $0] } ?? []
+            return ("agy", ["--input-format", "stream-json", "--output-format", "stream-json"] + resume + ["--print", ""])
+        }
+    }
+
+    static func chatProtocol(for cli: CLIKind, cwd: String, resume: String?) -> any ChatProtocol {
+        switch cli {
+        case .claude: ClaudeChatProtocol()
+        case .codex: CodexChatProtocol(cwd: cwd, resume: resume)
+        case .agy: AgyChatProtocol()
         }
     }
 

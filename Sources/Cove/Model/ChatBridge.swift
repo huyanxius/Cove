@@ -2,16 +2,20 @@ import CoveCore
 import Foundation
 import Observation
 
-/// Cove 界面模式下的 claude 进程：stdin / stdout 两根管道，一行一个 JSON（见 `StreamEvent`）。
+/// Cove 界面模式下的 CLI 进程：stdin / stdout 两根管道，一行一个 JSON。说的是哪种格式由
+/// `ChatProtocol` 决定（claude 的 stream-json、`codex app-server`、agy 的 stream-json）。
 ///
-/// 仍经用户的登录交互 shell 拉起（alias、PATH、`CLAUDE_CONFIG_DIR` 和终端模式一致）。
+/// 仍经用户的登录交互 shell 拉起（alias、PATH、配置目录和终端模式一致）。
 /// 交互 shell 读 .zshrc 时可能往 stdout 打横幅，那些不是 JSON 的行在解析时丢掉。
+/// 协议是有状态的，所以每一行都回到主线程再交给它，保证按顺序、不并发。
 @MainActor
 @Observable
 final class ChatBridge {
     private(set) var log: ChatLog
     private(set) var commands: [SlashCommand] = []
     private(set) var isRunning = false
+    /// 收到过对面的第一行输出。agy 冷启动要半分钟，这之前空白页显示「正在连接」。
+    private(set) var connected = false
     /// 正在流式输出的正文按到达批次记下时间，对话视图据此让新到的字模糊渐显。
     /// 只在 `log.draft` 非 nil 时有内容。
     private(set) var draftChunks: [DraftChunk] = []
@@ -43,13 +47,22 @@ final class ChatBridge {
     /// stderr 的最后几行：进程一启动就退出（没登录、参数不认）时拿来告诉用户原因。
     @ObservationIgnored private var errorTail = ""
 
-    init(history: ChatLog = ChatLog()) {
-        log = history
+    let cli: CLIKind
+    @ObservationIgnored private var proto: any ChatProtocol
+
+    init(cli: CLIKind, protocol proto: any ChatProtocol) {
+        self.cli = cli
+        self.proto = proto
+        log = ChatLog()
     }
 
-    func start(shell: String, arguments: [String], cwd: String, environment: [String: String]) -> Bool {
+    /// 模型、强度、权限模式这些控制目前只有 claude 的协议支持。
+    var supportsSessionControls: Bool { cli == .claude }
+    var canInterrupt: Bool { proto.canInterrupt }
+
+    func start(shell: String, program: String, arguments: [String], cwd: String, environment: [String: String]) -> Bool {
         bypassAllowed = arguments.contains("--allow-dangerously-skip-permissions")
-        let command = ClaudeLaunch.shellCommand(shell: shell, program: "claude", arguments: arguments, clearScreen: false)
+        let command = ClaudeLaunch.shellCommand(shell: shell, program: program, arguments: arguments, clearScreen: false)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: command.executable)
         process.arguments = command.args
@@ -61,9 +74,8 @@ final class ChatBridge {
         process.standardError = stderr
 
         let reader = LineReader { [weak self] line in
-            let events = StreamEvent.parse(line)
-            guard !events.isEmpty else { return }
-            DispatchQueue.main.async { self?.handle(events) }
+            guard line.first == "{" else { return }
+            DispatchQueue.main.async { self?.receive(line) }
         }
         stdout.fileHandleForReading.readabilityHandler = { handle in reader.feed(handle.availableData) }
         stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -88,7 +100,7 @@ final class ChatBridge {
         self.process = process
         input = stdin.fileHandleForWriting
         isRunning = true
-        write(StreamInput.initialize(requestID: nextRequestID()))
+        for line in proto.opening() { write(line) }
         return true
     }
 
@@ -96,28 +108,36 @@ final class ChatBridge {
         log = history
     }
 
+    /// 在对话里插一条提示（不来自 CLI）。
+    func note(_ text: String) {
+        log.apply(.notice(text))
+    }
+
     func send(_ text: String) {
         guard isRunning else { return }
         log.addPrompt(text)
-        write(StreamInput.userMessage(text))
+        for line in proto.send(text) { write(line) }
     }
 
     func answer(_ request: PermissionRequest, allow: Bool) {
         log.answer(request.requestID, allowed: allow)
-        write(StreamInput.permission(requestID: request.requestID, allow: allow, rawInput: request.rawInput))
+        for line in proto.answer(request, allow: allow) { write(line) }
     }
 
     func setPermissionMode(_ mode: PermissionMode) {
+        guard supportsSessionControls else { return }
         write(StreamInput.setPermissionMode(mode, requestID: nextRequestID()))
     }
 
     /// `set_model` 的应答不带模型名，发出去就当生效；下一条 assistant 行会带上真实模型 ID。
     func setModel(_ option: ModelOption) {
+        guard supportsSessionControls else { return }
         modelValue = option.value
         write(StreamInput.setModel(option.value, requestID: nextRequestID()))
     }
 
     func setEffort(_ level: String) {
+        guard supportsSessionControls else { return }
         effortLevel = level
         write(StreamInput.setEffort(level, requestID: nextRequestID()))
     }
@@ -136,13 +156,20 @@ final class ChatBridge {
 
     func interrupt() {
         guard log.isWorking else { return }
-        write(StreamInput.interrupt(requestID: nextRequestID()))
+        for line in proto.interrupt() { write(line) }
     }
 
     func terminate() {
         try? input?.close()
         input = nil
         process?.terminate()
+    }
+
+    private func receive(_ line: String) {
+        connected = true
+        let step = proto.receive(line)
+        for reply in step.replies { write(reply) }
+        if !step.events.isEmpty { handle(step.events) }
     }
 
     private func handle(_ events: [StreamEvent]) {
@@ -200,7 +227,7 @@ final class ChatBridge {
 
     private func nextRequestID() -> String {
         requestCounter += 1
-        return "cove-\(requestCounter)"
+        return "cove-ui-\(requestCounter)"
     }
 }
 

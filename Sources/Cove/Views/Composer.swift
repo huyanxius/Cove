@@ -47,17 +47,17 @@ struct Composer: View {
 
             HStack(spacing: 6) {
                 cliMenu.padding(.trailing, 2)
-                if let chat = session.chat {
+                if let chat = session.chat, chat.supportsSessionControls {
                     modelMenu(chat)
                     EffortMenu(levels: chat.effortLevels, current: chat.effortLevel) { chat.setEffort($0) }
                     modeMenu(chat).padding(.trailing, 6)
                 }
                 // 只有输入框为空时按键才会交给 CLI，所以提示也只在那时出现。
                 if let chat = session.chat {
-                    if chat.log.isWorking {
+                    if chat.log.isWorking, chat.canInterrupt {
                         KeyCap(text: "esc")
                         Text("打断")
-                    } else if session.draft.isEmpty && session.isRunning {
+                    } else if session.draft.isEmpty && session.isRunning && !chat.commands.isEmpty {
                         KeyCap(text: "/")
                         Text("命令与技能")
                     }
@@ -142,7 +142,7 @@ struct Composer: View {
     private var sendButton: some View {
         // Cove 界面里 Claude 在干活、输入框又是空的：按钮换成停止。有字时仍是发送——
         // stream-json 允许中途插话，claude 会在当前动作结束后读到。
-        if let chat = session.chat, chat.log.isWorking, session.draft.isEmpty {
+        if let chat = session.chat, chat.canInterrupt, chat.log.isWorking, session.draft.isEmpty {
             Button(action: { chat.interrupt() }) {
                 Image(systemName: "stop.fill")
                     .font(.system(size: 11, weight: .semibold))

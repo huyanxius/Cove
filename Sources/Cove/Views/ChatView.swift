@@ -40,7 +40,8 @@ struct ChatView: View {
         }
         .overlay {
             if chat.log.items.isEmpty && !chat.log.isWorking {
-                EmptyChat(cwd: session.cwd, running: session.isRunning)
+                EmptyChat(cwd: session.cwd, running: session.isRunning,
+                          connecting: session.isRunning && !chat.connected ? session.cli.displayName : nil)
             }
         }
         .background(SwiftUI.Color.coveBg)
@@ -86,7 +87,9 @@ private struct ChatRow: View {
         case let .tool(call):
             ToolLine(call: call) { path in session.openDiff(path) }
         case let .permission(request, answer):
-            PermissionCard(request: request, answer: answer) { allow in chat.answer(request, allow: allow) }
+            PermissionCard(request: request, answer: answer, agent: session.cli == .claude ? "Claude" : session.cli.displayName) { allow in
+                chat.answer(request, allow: allow)
+            }
         case let .notice(text):
             Text(text)
                 .font(CoveFont.ui(12))
@@ -187,13 +190,14 @@ struct ToolLine: View {
 private struct PermissionCard: View {
     let request: PermissionRequest
     let answer: PermissionAnswer?
+    let agent: String
     let decide: (Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Rectangle().fill(answer == nil ? SwiftUI.Color.coveAttn : SwiftUI.Color.coveT3).frame(width: 6, height: 6)
-                Text(answer == nil ? "Claude 想要使用 \(request.toolName)" : "\(request.toolName)")
+                Text(answer == nil ? "\(agent) 想要\(Self.action(request))" : Self.action(request))
                     .font(CoveFont.ui(13, weight: .medium))
                     .foregroundStyle(SwiftUI.Color.coveT1)
                 Spacer()
@@ -230,6 +234,16 @@ private struct PermissionCard: View {
             .strokeBorder(answer == nil ? SwiftUI.Color.coveAttn.opacity(0.55) : SwiftUI.Color.coveRaisedLine))
     }
 
+    /// 卡片标题里的动作：命令就是「运行命令」，改文件就是「修改文件」，其余写工具名。
+    static func action(_ request: PermissionRequest) -> String {
+        switch request.toolName {
+        case "Bash": "运行命令"
+        case "Edit", "MultiEdit", "Write", "NotebookEdit": "修改文件"
+        case "WebFetch": "访问网页"
+        default: "使用 \(request.toolName)"
+        }
+    }
+
     /// 让人判断「批不批」最需要看的那一项：命令、路径或网址；都没有就用 CLI 的一句话说明。
     private var detail: String {
         let input = request.input
@@ -259,6 +273,8 @@ private struct WorkingLine: View {
 private struct EmptyChat: View {
     let cwd: String
     let running: Bool
+    /// 非 nil 时进程还没吐出第一行：显示「正在连接 xx」。
+    let connecting: String?
 
     var body: some View {
         VStack(spacing: 10) {
@@ -268,7 +284,8 @@ private struct EmptyChat: View {
             Text(running ? "在 \((cwd as NSString).lastPathComponent) 里开始" : "会话已结束")
                 .font(CoveFont.display(20))
                 .foregroundStyle(SwiftUI.Color.coveT1)
-            Text(running ? "输入 / 查看可用的命令和技能" : "双击顶部状态可以恢复")
+            Text(connecting.map { "正在连接 \($0)…可以先输入，连上后自动发出" }
+                 ?? (running ? "输入 / 查看可用的命令和技能" : "双击顶部状态可以恢复"))
                 .font(CoveFont.ui(12.5))
                 .foregroundStyle(SwiftUI.Color.coveT3)
         }
