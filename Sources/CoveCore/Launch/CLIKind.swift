@@ -1,7 +1,8 @@
 /// Cove 能承载的命令行 Agent。终端里跑的都是它们各自的原版程序。
 ///
-/// 只有 claude 有完整的会话记录与状态推断（JSONL、--session-id、statusLine 用量）；
-/// codex 和 agy 目前只作为「在这个文件夹里开一个终端会话」接入，不解析它们的内部记录。
+/// 只有 claude 有完整的状态推断（JSONL、--session-id、statusLine 用量）；codex 和 agy
+/// 接入到「侧栏列出历史会话、点开即恢复」为止，会话列表读它们自己的索引库（见 `CodexSessions`
+/// / `AgySessions`），不解析对话内容。
 public enum CLIKind: String, CaseIterable, Identifiable, Sendable, Codable {
     case claude, codex, agy
 
@@ -24,11 +25,14 @@ public enum CLIKind: String, CaseIterable, Identifiable, Sendable, Codable {
         }
     }
 
-    /// 非 claude 的 CLI：新会话不带参数；`resume` 预留给以后接入各自的恢复命令。
+    /// 恢复某个会话的参数；`resume` 为 nil 即新开。codex 的恢复是子命令，agy 是选项。
+    /// claude 新会话还要带 `--session-id`，那部分在 `ClaudeLaunch`。
     public func arguments(resume: String?) -> [String] {
+        guard let resume else { return [] }
         switch self {
-        case .claude: resume.map { ["--resume", $0] } ?? []
-        case .codex, .agy: []
+        case .claude: return ["--resume", resume]
+        case .codex: return ["resume", resume]
+        case .agy: return ["--conversation", resume]
         }
     }
 }

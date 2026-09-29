@@ -14,9 +14,13 @@ public struct SessionSummary: Identifiable, Hashable, Sendable {
     /// 文件修改时间，而不是最后一条消息的时间戳：CLI 写标题、写统计也算活动。
     public var lastActivity: Date
     public var promptCount: Int
+    /// 这条会话属于哪个 CLI；决定点开时拉起谁、用什么参数恢复。
+    public var cli: CLIKind
+    /// 原件已被 CLI 清理、只剩 Cove 备份时为 true；点开前要先复原（见 `TranscriptArchive`）。
+    public var isArchivedOnly = false
 
     public init(id: String, fileURL: URL, title: String, cwd: String?, gitBranch: String?,
-                lastActivity: Date, promptCount: Int) {
+                lastActivity: Date, promptCount: Int, cli: CLIKind = .claude) {
         self.id = id
         self.fileURL = fileURL
         self.title = title
@@ -24,6 +28,7 @@ public struct SessionSummary: Identifiable, Hashable, Sendable {
         self.gitBranch = gitBranch
         self.lastActivity = lastActivity
         self.promptCount = promptCount
+        self.cli = cli
     }
 
     public var projectName: String {
@@ -63,7 +68,7 @@ public enum SessionSummarizer {
                               lastActivity: modified, promptCount: prompts)
     }
 
-    static func flatten(_ text: String) -> String {
+    public static func flatten(_ text: String) -> String {
         let words = text.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
