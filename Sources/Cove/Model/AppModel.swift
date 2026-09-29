@@ -111,12 +111,30 @@ final class AppModel {
                     && summary.lastActivity >= session.startedAt.addingTimeInterval(-5)
             }
             guard let match else { continue }
-            let oldID = session.id
             claimed.insert(match.id)
-            live.removeValue(forKey: oldID)
-            session.adopt(externalID: match.id)
-            live[match.id] = session
-            if selection == oldID { selection = match.id }
+            rekey(session, to: match.id)
+        }
+    }
+
+    private func rekey(_ session: LiveSession, to newID: String) {
+        let oldID = session.id
+        live.removeValue(forKey: oldID)
+        session.adopt(externalID: newID)
+        live[newID] = session
+        if selection == oldID { selection = newID }
+    }
+
+    /// Cove 界面的 codex / agy 会话一连上就报出自己的会话 ID，直接认领，不用等索引、也不用猜。
+    /// 改了只能在启动时设的项（agy 的模型、强度、档位）的会话，这一轮结束后按原会话重开。
+    func reconcileChatSessions() {
+        for session in Array(live.values) {
+            guard let chat = session.chat else { continue }
+            if session.awaitsExternalID, let external = chat.externalID, live[external] == nil {
+                rekey(session, to: external)
+            }
+            if chat.needsRelaunch, !chat.log.isWorking, session.isRunning {
+                restart(session.id, forceResume: chat.externalID != nil)
+            }
         }
     }
 
@@ -229,13 +247,14 @@ final class AppModel {
         if panel.runModal() == .OK, let url = panel.url { newSession(in: url, inWorktree: inWorktree) }
     }
 
-    /// 进程已退出的会话，在原地用同一个 ID 重新 resume。
-    func restart(_ id: String) {
+    /// 进程已退出的会话，在原地用同一个 ID 重新 resume。`forceResume`：会话 ID 是 CLI 刚报来的，
+    /// 索引里可能还没有它，但它一定能恢复。
+    func restart(_ id: String, forceResume: Bool = false) {
         guard let old = live.removeValue(forKey: id) else { return }
         old.terminate()
         // 还没发过消息的会话在 CLI 那边没有记录，恢复会失败，改为新开。claude 用同一 ID 新开；
         // codex / agy 新开后会重新认领。
-        let known = sessions.contains { $0.id == id } || (old.cli == .claude && indexer.transcriptURL(for: id) != nil)
+        let known = forceResume || sessions.contains { $0.id == id } || (old.cli == .claude && indexer.transcriptURL(for: id) != nil)
         let mode: ClaudeLaunch.Mode = known ? .resume(sessionID: id) : .new(sessionID: id)
         let session = LiveSession(id: id, cwd: old.cwd, title: old.title, mode: mode, cli: old.cli,
                                   surface: InterfaceMode.current.surface(for: old.cli), indexer: indexer)

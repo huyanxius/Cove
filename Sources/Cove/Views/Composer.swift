@@ -47,9 +47,9 @@ struct Composer: View {
 
             HStack(spacing: 6) {
                 cliMenu.padding(.trailing, 2)
-                if let chat = session.chat, chat.supportsSessionControls {
+                if let chat = session.chat {
                     modelMenu(chat)
-                    EffortMenu(levels: chat.effortLevels, current: chat.effortLevel) { chat.setEffort($0) }
+                    EffortMenu(levels: chat.controls.effortLevels, current: chat.controls.effort) { chat.setEffort($0) }
                     modeMenu(chat).padding(.trailing, 6)
                 }
                 // 只有输入框为空时按键才会交给 CLI，所以提示也只在那时出现。
@@ -101,12 +101,11 @@ struct Composer: View {
     }
 
     private func modelMenu(_ chat: ChatBridge) -> some View {
-        let current = chat.models.first { $0.value == chat.modelValue }
-        return ChipMenu(title: current.map { Self.shortName($0.displayName) } ?? "模型",
-                        options: chat.models.map { .init(id: $0.value, title: Self.shortName($0.displayName), detail: $0.description) },
-                        selected: chat.modelValue, help: "模型") { value in
-            if let option = chat.models.first(where: { $0.value == value }) { chat.setModel(option) }
-        }
+        let controls = chat.controls
+        let current = controls.models.first { $0.value == controls.model }
+        return ChipMenu(title: current.map { Self.shortName($0.displayName) } ?? controls.model ?? "模型",
+                        options: controls.models.map { .init(id: $0.value, title: Self.shortName($0.displayName), detail: $0.description) },
+                        selected: controls.model, help: "模型") { chat.setModel($0) }
     }
 
     /// 「Default (recommended)」在块上太长，括号里的说明只留在列表的副标题里。
@@ -115,16 +114,15 @@ struct Composer: View {
     }
 
     private func modeMenu(_ chat: ChatBridge) -> some View {
-        ChipMenu(title: chat.permissionMode?.title ?? "权限",
-                 options: PermissionMode.allCases.map { mode in
-                     let locked = mode == .bypassPermissions && !chat.bypassAllowed
-                     return .init(id: mode.rawValue, title: mode.title,
-                                  detail: locked ? "要先在设置里打开「允许跳过权限模式」，并重开会话" : mode.detail,
-                                  enabled: !locked)
-                 },
-                 selected: chat.permissionMode?.rawValue, footnote: "⇧⌘M 依次切换", help: "权限模式") { value in
-            if let mode = PermissionMode(rawValue: value) { chat.setPermissionMode(mode) }
-        }
+        let controls = chat.controls
+        return ChipMenu(title: controls.mode.map { ModeCatalog.title(chat.cli, $0) } ?? "权限",
+                        options: controls.modes.map { id in
+                            let locked = chat.cli == .claude && id == PermissionMode.bypassPermissions.rawValue && !chat.bypassAllowed
+                            return .init(id: id, title: ModeCatalog.title(chat.cli, id),
+                                         detail: locked ? "要先在设置里打开「允许跳过权限模式」，并重开会话" : ModeCatalog.detail(chat.cli, id),
+                                         enabled: !locked)
+                        },
+                        selected: controls.mode, footnote: "⇧⌘M 依次切换", help: "权限档位") { chat.setMode($0) }
     }
 
     /// 切换 CLI：在同一文件夹里用另一个 CLI 开新会话（运行中的 CLI 换不了，上下文也带不过去）。
@@ -509,5 +507,42 @@ enum Attachments {
         formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
         let url = directory.appendingPathComponent("paste-\(formatter.string(from: .now)).png")
         return (try? png.write(to: url)) != nil ? url.path : nil
+    }
+}
+
+/// 三家的权限档位叫法不同，照各自官方的说法。id 由各 `ChatProtocol` 给出。
+enum ModeCatalog {
+    static func title(_ cli: CLIKind, _ id: String) -> String {
+        switch (cli, id) {
+        case (.claude, _): PermissionMode(rawValue: id)?.title ?? id
+        case (.codex, "read-only"): "只读"
+        case (.codex, "auto"): "自动"
+        case (.codex, "full-access"): "完全访问"
+        case (.agy, "default"): "默认"
+        case (.agy, "accept-edits"): "自动接受编辑"
+        case (.agy, "plan"): "计划模式"
+        default: id
+        }
+    }
+
+    static func detail(_ cli: CLIKind, _ id: String) -> String {
+        switch (cli, id) {
+        case (.claude, _): PermissionMode(rawValue: id)?.detail ?? ""
+        case (.codex, "read-only"): "只看不改：改文件、跑命令都先问你"
+        case (.codex, "auto"): "可以改工作区里的文件，超出范围时询问"
+        case (.codex, "full-access"): "不受沙箱限制，也不再询问，谨慎使用"
+        case (.agy, "default"): "按 Antigravity 自己的规则决定"
+        case (.agy, "accept-edits"): "文件修改直接接受"
+        case (.agy, "plan"): "先给出方案，不改代码"
+        default: ""
+        }
+    }
+
+    /// ⇧⌘M 的下一档：按列表顺序轮换，claude 的「跳过权限」不在轮换里。
+    static func next(after current: String?, in modes: [String]) -> String? {
+        let cycle = modes.filter { $0 != PermissionMode.bypassPermissions.rawValue }
+        guard !cycle.isEmpty else { return nil }
+        let index = current.flatMap { cycle.firstIndex(of: $0) } ?? -1
+        return cycle[(index + 1) % cycle.count]
     }
 }

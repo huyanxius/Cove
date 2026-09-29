@@ -32,6 +32,7 @@ struct CoveApp: App {
                     // 正在干活而被跳过的会话，等它空下来再补上。
                     model.reconcileTones()
                     model.reconcileSurfaces()
+                    model.reconcileChatSessions()
                 }
                 .sheet(isPresented: Binding(get: { !onboarded }, set: { onboarded = !$0 })) {
                     OnboardingView().environment(model)
@@ -79,14 +80,14 @@ struct CoveApp: App {
                 .disabled(model.selectedLive?.isRunning != true)
                 Button("Cycle Permission Mode") {
                     guard let chat = model.selectedLive?.chat else { return }
-                    chat.setPermissionMode((chat.permissionMode ?? .default).next)
+                    if let next = ModeCatalog.next(after: chat.controls.mode, in: chat.controls.modes) { chat.setMode(next) }
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
                 .disabled(model.selectedLive?.chat == nil)
                 Button("Raise Effort") {
-                    guard let chat = model.selectedLive?.chat, !chat.effortLevels.isEmpty else { return }
-                    let levels = chat.effortLevels
-                    let index = chat.effortLevel.flatMap { levels.firstIndex(of: $0) } ?? levels.count / 2 - 1
+                    guard let chat = model.selectedLive?.chat, !chat.controls.effortLevels.isEmpty else { return }
+                    let levels = chat.controls.effortLevels
+                    let index = chat.controls.effort.flatMap { levels.firstIndex(of: $0) } ?? levels.count / 2 - 1
                     chat.setEffort(levels[(index + 1) % levels.count])
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])

@@ -19,13 +19,13 @@ final class ChatBridge {
     /// 正在流式输出的正文按到达批次记下时间，对话视图据此让新到的字模糊渐显。
     /// 只在 `log.draft` 非 nil 时有内容。
     private(set) var draftChunks: [DraftChunk] = []
-    /// 模型菜单的选项和当前选择（`value`，比如 `default`、`sonnet`）；初始化应答回来前为空。
-    private(set) var models: [ModelOption] = []
-    private(set) var modelValue = "default"
-    private(set) var permissionMode: PermissionMode?
-    /// 当前思考强度。协议不回报它，初值取用户 settings.json 里的 `effortLevel`，没设为 nil（显示「默认」）。
-    private(set) var effortLevel: String? = ChatBridge.configuredEffort()
-    /// 启动时是否带了 `--allow-dangerously-skip-permissions`；没带就不能切到跳过权限。
+    /// 模型、强度、权限档位的可选项和当前值，协议维护、这里只是给界面看的副本。
+    private(set) var controls = ChatControls()
+    /// CLI 自己的会话 ID（codex 线程 / agy 对话），拿到后 `AppModel` 用它认领会话。
+    private(set) var externalID: String?
+    /// 改了只能在启动时设的项（agy），等这一轮结束按原会话重开。
+    private(set) var needsRelaunch = false
+    /// 启动时是否带了 `--allow-dangerously-skip-permissions`；没带就不能切到跳过权限（claude）。
     private(set) var bypassAllowed = false
 
     struct DraftChunk {
@@ -39,7 +39,6 @@ final class ChatBridge {
 
     @ObservationIgnored private var process: Process?
     @ObservationIgnored private var input: FileHandle?
-    @ObservationIgnored private var requestCounter = 0
     /// 上下文占用的两半，分别从 assistant 行和 result 行到达（见 `StreamEvent.context`）。
     /// 第一轮结束前还不知道窗口大小，圆环先空着。
     @ObservationIgnored private var contextTokens: Int?
@@ -53,11 +52,10 @@ final class ChatBridge {
     init(cli: CLIKind, protocol proto: any ChatProtocol) {
         self.cli = cli
         self.proto = proto
+        controls = proto.controls
         log = ChatLog()
     }
 
-    /// 模型、强度、权限模式这些控制目前只有 claude 的协议支持。
-    var supportsSessionControls: Bool { cli == .claude }
     var canInterrupt: Bool { proto.canInterrupt }
 
     func start(shell: String, program: String, arguments: [String], cwd: String, environment: [String: String]) -> Bool {
@@ -73,8 +71,8 @@ final class ChatBridge {
         process.standardOutput = stdout
         process.standardError = stderr
 
-        let reader = LineReader { [weak self] line in
-            guard line.first == "{" else { return }
+        let reader = LineReader { [weak self] raw in
+            guard let line = JSONLine.payload(raw) else { return }
             DispatchQueue.main.async { self?.receive(line) }
         }
         stdout.fileHandleForReading.readabilityHandler = { handle in reader.feed(handle.availableData) }
@@ -124,34 +122,30 @@ final class ChatBridge {
         for line in proto.answer(request, allow: allow) { write(line) }
     }
 
-    func setPermissionMode(_ mode: PermissionMode) {
-        guard supportsSessionControls else { return }
-        write(StreamInput.setPermissionMode(mode, requestID: nextRequestID()))
+    func setModel(_ value: String) { apply(proto.setModel(value), note: "模型") }
+    func setEffort(_ level: String) { apply(proto.setEffort(level), note: "思考强度") }
+    func setMode(_ id: String) { apply(proto.setMode(id), note: "权限档位") }
+
+    /// agy 的模型列表要另外跑 `agy models` 才拿得到，由 `LiveSession` 取回后塞进来。
+    func supply(models: [ModelOption]) {
+        guard var agy = proto as? AgyChatProtocol else { return }
+        agy.supply(models: models)
+        proto = agy
+        controls = proto.controls
     }
 
-    /// `set_model` 的应答不带模型名，发出去就当生效；下一条 assistant 行会带上真实模型 ID。
-    func setModel(_ option: ModelOption) {
-        guard supportsSessionControls else { return }
-        modelValue = option.value
-        write(StreamInput.setModel(option.value, requestID: nextRequestID()))
-    }
-
-    func setEffort(_ level: String) {
-        guard supportsSessionControls else { return }
-        effortLevel = level
-        write(StreamInput.setEffort(level, requestID: nextRequestID()))
-    }
-
-    /// 当前模型支持的强度档位；「default」这一项在初始化应答里同样带着档位。
-    var effortLevels: [String] {
-        models.first { $0.value == modelValue }?.effortLevels ?? []
-    }
-
-    private static func configuredEffort() -> String? {
-        let url = SessionIndexer.defaultRoot.deletingLastPathComponent().appendingPathComponent("settings.json")
-        guard let data = try? Data(contentsOf: url),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return object["effortLevel"] as? String
+    private func apply(_ change: ControlChange, note label: String) {
+        switch change {
+        case let .send(lines):
+            for line in lines { write(line) }
+        case .relaunch:
+            if !needsRelaunch {
+                log.apply(.notice("\(cli.displayName) 只能在启动时设\(label)：这一轮结束后会按原会话重开，对话不会丢。"))
+            }
+            needsRelaunch = true
+        }
+        controls = proto.controls
+        ChatPreferences.save(cli, controls)
     }
 
     func interrupt() {
@@ -170,6 +164,8 @@ final class ChatBridge {
         let step = proto.receive(line)
         for reply in step.replies { write(reply) }
         if !step.events.isEmpty { handle(step.events) }
+        if controls != proto.controls { controls = proto.controls }
+        if externalID != proto.externalID { externalID = proto.externalID }
     }
 
     private func handle(_ events: [StreamEvent]) {
@@ -187,11 +183,6 @@ final class ChatBridge {
                     usage.contextPercent = (Double(tokens) / Double(window) * 1000).rounded() / 10
                     onUsage?(usage)
                 }
-            case let .sessionInfo(list, mode):
-                models = list
-                permissionMode = mode.flatMap(PermissionMode.init)
-            case let .permissionMode(mode):
-                permissionMode = PermissionMode(rawValue: mode)
             case let .transcript(.model(id)) where !id.hasPrefix("<"):
                 var usage = UsageSnapshot()
                 usage.modelID = id
@@ -214,7 +205,7 @@ final class ChatBridge {
         isRunning = false
         input = nil
         if status != 0, !errorTail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            log.apply(.turnFinished(error: "claude 退出了（\(status)）：\(errorTail.trimmingCharacters(in: .whitespacesAndNewlines))",
+            log.apply(.turnFinished(error: "\(cli.executable) 退出了（\(status)）：\(errorTail.trimmingCharacters(in: .whitespacesAndNewlines))",
                                     costUSD: nil, apiDuration: nil))
         }
         onExit?(status)
@@ -225,10 +216,6 @@ final class ChatBridge {
         try? input?.write(contentsOf: Data(line.utf8))
     }
 
-    private func nextRequestID() -> String {
-        requestCounter += 1
-        return "cove-ui-\(requestCounter)"
-    }
 }
 
 /// 把管道里零碎到达的字节拼成完整的行。只在 stdout 的读回调线程上用。
@@ -247,4 +234,32 @@ private final class LineReader: @unchecked Sendable {
             onLine(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespaces))
         }
     }
+}
+
+/// 用户为 codex / agy 选过的模型、强度、权限档位，新开的会话沿用。claude 不存：它的强度
+/// 以用户 settings.json 为准，模型和模式每个会话由 claude 自己报。
+enum ChatPreferences {
+    static func load(_ cli: CLIKind) -> (model: String?, effort: String?, mode: String?) {
+        let defaults = UserDefaults.standard
+        return (defaults.string(forKey: key(cli, "model")), defaults.string(forKey: key(cli, "effort")),
+                defaults.string(forKey: key(cli, "mode")))
+    }
+
+    static func save(_ cli: CLIKind, _ controls: ChatControls) {
+        guard cli != .claude else { return }
+        let defaults = UserDefaults.standard
+        defaults.set(controls.model, forKey: key(cli, "model"))
+        defaults.set(controls.effort, forKey: key(cli, "effort"))
+        defaults.set(controls.mode, forKey: key(cli, "mode"))
+    }
+
+    /// claude 的初始强度：用户 settings.json 里的 `effortLevel`。
+    static func claudeEffort() -> String? {
+        let url = SessionIndexer.defaultRoot.deletingLastPathComponent().appendingPathComponent("settings.json")
+        guard let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return object["effortLevel"] as? String
+    }
+
+    private static func key(_ cli: CLIKind, _ name: String) -> String { "chat.\(cli.rawValue).\(name)" }
 }

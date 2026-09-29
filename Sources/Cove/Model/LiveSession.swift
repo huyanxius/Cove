@@ -168,6 +168,7 @@ final class LiveSession: Identifiable {
                 self.hasOutput = true
                 self.tail?.start()
                 if cli == .claude { self.startAccountLimits() }
+                if cli == .agy { self.fetchAgyModels() }
             } else {
                 self.processDidExit(nil)
             }
@@ -182,17 +183,30 @@ final class LiveSession: Identifiable {
         case .codex:
             return ("codex", ["app-server"])
         case .agy:
-            // `--print` 要带一个参数（这里是空串），而且要放在最后：agy 会把紧跟在它后面的东西当成提示词。
-            let resume = resumeID.map { ["--conversation", $0] } ?? []
-            return ("agy", ["--input-format", "stream-json", "--output-format", "stream-json"] + resume + ["--print", ""])
+            let controls = chat?.controls ?? ChatControls()
+            return ("agy", AgyChatProtocol.launchArguments(resume: resumeID, model: controls.model,
+                                                           effort: controls.effort, mode: controls.mode))
         }
     }
 
     static func chatProtocol(for cli: CLIKind, cwd: String, resume: String?) -> any ChatProtocol {
+        let saved = ChatPreferences.load(cli)
         switch cli {
-        case .claude: ClaudeChatProtocol()
-        case .codex: CodexChatProtocol(cwd: cwd, resume: resume)
-        case .agy: AgyChatProtocol()
+        case .claude: return ClaudeChatProtocol(effort: ChatPreferences.claudeEffort())
+        case .codex: return CodexChatProtocol(cwd: cwd, resume: resume, model: saved.model, effort: saved.effort, mode: saved.mode)
+        case .agy: return AgyChatProtocol(model: saved.model, effort: saved.effort, mode: saved.mode)
+        }
+    }
+
+    /// agy 的模型列表只能从 `agy models` 的文字输出里读。
+    private func fetchAgyModels() {
+        guard let chat else { return }
+        Task { [weak chat] in
+            let output = await Task.detached(priority: .utility) {
+                Git.exec(LiveSession.loginShell(), ["-l", "-i", "-c", "agy models"], in: nil).output
+            }.value
+            let models = AgyChatProtocol.parseModels(output)
+            if !models.isEmpty { chat?.supply(models: models) }
         }
     }
 

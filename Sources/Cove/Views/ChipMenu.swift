@@ -136,6 +136,8 @@ struct EffortMenu: View {
 
     static func title(_ level: String) -> String {
         switch level {
+        case "none": "关闭"
+        case "minimal": "极低"
         case "low": "低"
         case "medium": "中"
         case "high": "高"
@@ -147,6 +149,8 @@ struct EffortMenu: View {
 
     static func detail(_ level: String) -> String {
         switch level {
+        case "none": "不做额外推理，直接回答。"
+        case "minimal": "几乎不推理，最快。"
         case "low": "想得最少，回得最快，适合简单问答和小改动。"
         case "medium": "日常编码的平衡点。"
         case "high": "复杂任务、跨文件改动时多想一步。"
