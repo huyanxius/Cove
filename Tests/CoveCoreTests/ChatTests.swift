@@ -534,3 +534,68 @@ import Testing
         #expect(agy.receive(step).events.isEmpty)
     }
 }
+
+@Suite struct JSONLineTests {
+    @Test func stripsTerminalEscapesGluedToTheFirstLine() {
+        // 真实样本：.zshrc 横幅的颜色重置码没换行，agy 的 init 行被粘在后面。
+        #expect(JSONLine.payload("\u{1B}[0m{\"event\":\"init\"}") == "{\"event\":\"init\"}")
+        #expect(JSONLine.payload("  {\"a\":1}") == "{\"a\":1}")
+        #expect(JSONLine.payload("\u{1B}[1;35m  /\\_/\\  [ Antigravity Core ]") == nil)
+        #expect(JSONLine.payload("text {\"a\":1}") == nil)
+    }
+}
+
+@Suite struct ChatControlsTests {
+    func object(_ line: String) throws -> [String: Any] {
+        try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+    }
+
+    @Test func claudeReadsModelsAndModeFromInitialize() {
+        var claude = ClaudeChatProtocol(effort: "high")
+        let line = #"{"type":"control_response","response":{"subtype":"success","request_id":"i","response":{"models":[{"value":"default","displayName":"Default","supportsEffort":true,"supportedEffortLevels":["low","high"]}],"current_permission_mode":"auto"}}}"#
+        _ = claude.receive(line)
+        #expect(claude.controls.models.map(\.value) == ["default"])
+        #expect(claude.controls.effortLevels == ["low", "high"])
+        #expect(claude.controls.mode == "auto")
+        #expect(claude.controls.effort == "high")
+        guard case let .send(lines) = claude.setMode("plan") else { Issue.record("expected send"); return }
+        #expect(lines.count == 1)
+        #expect(claude.controls.mode == "auto")
+    }
+
+    @Test func codexListsModelsAndCarriesOverridesIntoTheNextTurn() throws {
+        var codex = CodexChatProtocol(cwd: "/p", resume: nil)
+        _ = codex.opening()
+        let afterInit = codex.receive(#"{"id":1,"result":{}}"#).replies
+        #expect(try object(afterInit[2])["method"] as? String == "model/list")
+        _ = codex.receive(#"{"id":3,"result":{"data":[{"id":"gpt-5.5","model":"gpt-5.5","displayName":"GPT-5.5","isDefault":true,"supportedReasoningEfforts":[{"reasoningEffort":"low","description":""},{"reasoningEffort":"high","description":""}]},{"id":"secret","model":"secret","displayName":"x","hidden":true}]}}"#)
+        #expect(codex.controls.models.map(\.value) == ["gpt-5.5"])
+        #expect(codex.controls.effortLevels == ["low", "high"])
+        _ = codex.receive(#"{"id":2,"result":{"thread":{"id":"t1","turns":[]},"model":"gpt-5.5","reasoningEffort":"low","sandbox":{"type":"workspaceWrite"}}}"#)
+        #expect(codex.controls.mode == "auto" && codex.controls.effort == "low")
+
+        #expect(codex.setEffort("high") == .send([]))
+        #expect(codex.setMode("read-only") == .send([]))
+        let turn = try object(codex.send("hi")[0])
+        let params = try #require(turn["params"] as? [String: Any])
+        #expect(params["effort"] as? String == "high")
+        #expect(params["approvalPolicy"] as? String == "on-request")
+        #expect((params["sandboxPolicy"] as? [String: Any])?["type"] as? String == "readOnly")
+        #expect(codex.externalID == "t1")
+    }
+
+    @Test func agyRelaunchesForEveryChangeAndBuildsArguments() {
+        var agy = AgyChatProtocol(model: nil, effort: nil, mode: nil)
+        #expect(agy.controls.mode == "default")
+        #expect(agy.setEffort("max") == .relaunch)
+        #expect(AgyChatProtocol.launchArguments(resume: "c1", model: "gemini-3.1-pro-high", effort: "max", mode: "plan")
+            == ["--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-3.1-pro-high",
+                "--effort", "max", "--mode", "plan", "--conversation", "c1", "--print", ""])
+        #expect(AgyChatProtocol.launchArguments(resume: nil, model: nil, effort: nil, mode: "default").suffix(2) == ["--print", ""])
+    }
+
+    @Test func parsesAgyModelList() {
+        let output = "Fetching available models...\ngemini-3.1-pro-high\tGemini 3.1 Pro (High)\nclaude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)\n"
+        #expect(AgyChatProtocol.parseModels(output).map(\.value) == ["gemini-3.1-pro-high", "claude-sonnet-4-6"])
+    }
+}
