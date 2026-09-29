@@ -46,10 +46,10 @@ struct Composer: View {
                 .onChange(of: session.draft) { _, _ in selectedSuggestion = 0 }
 
             HStack(spacing: 6) {
-                cliMenu.padding(.trailing, 4)
+                cliMenu.padding(.trailing, 2)
                 if let chat = session.chat {
                     modelMenu(chat)
-                    modeMenu(chat).padding(.trailing, 4)
+                    modeMenu(chat).padding(.trailing, 6)
                 }
                 // 只有输入框为空时按键才会交给 CLI，所以提示也只在那时出现。
                 if let chat = session.chat {
@@ -100,81 +100,36 @@ struct Composer: View {
     }
 
     private func modelMenu(_ chat: ChatBridge) -> some View {
-        Menu {
-            ForEach(chat.models) { option in
-                Button {
-                    chat.setModel(option)
-                } label: {
-                    if option.value == chat.modelValue { Label(option.displayName, systemImage: "checkmark") } else { Text(option.displayName) }
-                }
-            }
-        } label: {
-            chip(chat.models.first { $0.value == chat.modelValue }?.displayName.replacingOccurrences(of: " (recommended)", with: "") ?? "模型")
+        let current = chat.models.first { $0.value == chat.modelValue }
+        return ChipMenu(title: current.map { Self.shortName($0.displayName) } ?? "模型",
+                        options: chat.models.map { .init(id: $0.value, title: Self.shortName($0.displayName), detail: $0.description) },
+                        selected: chat.modelValue, help: "模型") { value in
+            if let option = chat.models.first(where: { $0.value == value }) { chat.setModel(option) }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .disabled(chat.models.isEmpty)
-        .help("模型")
+    }
+
+    /// 「Default (recommended)」在块上太长，括号里的说明只留在列表的副标题里。
+    private static func shortName(_ name: String) -> String {
+        name.replacingOccurrences(of: " (recommended)", with: "")
     }
 
     private func modeMenu(_ chat: ChatBridge) -> some View {
-        Menu {
-            ForEach(PermissionMode.allCases) { mode in
-                Button {
-                    chat.setPermissionMode(mode)
-                } label: {
-                    if mode == chat.permissionMode { Label(mode.title, systemImage: "checkmark") } else { Text(mode.title) }
-                }
-            }
-            Divider()
-            Text("⇧⌘M 依次切换")
-        } label: {
-            chip(chat.permissionMode?.title ?? "权限")
+        ChipMenu(title: chat.permissionMode?.title ?? "权限",
+                 options: PermissionMode.allCases.map { .init(id: $0.rawValue, title: $0.title, detail: $0.detail) },
+                 selected: chat.permissionMode?.rawValue, footnote: "⇧⌘M 依次切换", help: "权限模式") { value in
+            if let mode = PermissionMode(rawValue: value) { chat.setPermissionMode(mode) }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("权限模式（⇧⌘M 切换）")
-    }
-
-    private func chip(_ text: String) -> some View {
-        HStack(spacing: 4) {
-            Text(text).font(CoveFont.ui(11.5, weight: .medium))
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
-        }
-        .foregroundStyle(SwiftUI.Color.coveT2)
-        .padding(.horizontal, 7)
-        .frame(height: 22)
-        .background(SwiftUI.Color.coveKey, in: RoundedRectangle(cornerRadius: 5))
     }
 
     /// 切换 CLI：在同一文件夹里用另一个 CLI 开新会话（运行中的 CLI 换不了，上下文也带不过去）。
     private var cliMenu: some View {
-        Menu {
-            ForEach(CLIKind.allCases) { cli in
-                Button {
-                    model.switchCLI(of: session, to: cli)
-                } label: {
-                    if cli == session.cli { Label(cli.displayName, systemImage: "checkmark") } else { Text(cli.displayName) }
-                }
-            }
-            Divider()
-            Text("切换会在同一文件夹新开会话")
-        } label: {
-            HStack(spacing: 4) {
-                Text(session.cli.displayName).font(CoveFont.ui(11.5, weight: .medium))
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
-            }
-            .foregroundStyle(SwiftUI.Color.coveT2)
-            .padding(.horizontal, 7)
-            .frame(height: 22)
-            .background(SwiftUI.Color.coveKey, in: RoundedRectangle(cornerRadius: 5))
+        ChipMenu(title: session.cli.displayName,
+                 options: CLIKind.allCases.map { .init(id: $0.rawValue, title: $0.displayName, icon: AnyView(CLILogo(cli: $0, size: 18))) },
+                 selected: session.cli.rawValue, footnote: "切换会在同一文件夹新开会话", help: "切换 CLI") {
+            CLILogo(cli: session.cli, size: 15)
+        } pick: { value in
+            if let cli = CLIKind(rawValue: value) { model.switchCLI(of: session, to: cli) }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("切换 CLI")
     }
 
     @ViewBuilder
@@ -512,6 +467,16 @@ extension PermissionMode {
         case .plan: "计划模式"
         case .auto: "自动"
         case .bypassPermissions: "跳过权限"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .default: "改文件、跑命令前都先问你"
+        case .acceptEdits: "文件修改直接接受，其他命令仍会询问"
+        case .plan: "只读和探索，先给出方案，不改代码"
+        case .auto: "后台安全检查代替逐项确认"
+        case .bypassPermissions: "不再询问，谨慎使用"
         }
     }
 

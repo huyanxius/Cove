@@ -201,11 +201,7 @@ private struct SessionRow: View {
                             .help("原记录已被 claude 清理，这是 Cove 的备份；点开会先复原")
                     }
                     if summary.cli != .claude {
-                        Text(summary.cli.displayName)
-                            .font(CoveFont.mono(9))
-                            .foregroundStyle(SwiftUI.Color.coveAccent)
-                            .padding(.horizontal, 4)
-                            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(SwiftUI.Color.coveAccentDim))
+                        CLILogo(cli: summary.cli, size: 14).help(summary.cli.displayName)
                     }
                 }
                 meta
