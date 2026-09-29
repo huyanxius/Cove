@@ -130,6 +130,7 @@ public struct CodexChatProtocol: ChatProtocol {
     /// 审批请求 id → 原始 JSON 片段（数字或字符串）。
     private var approvals: [String: String] = [:]
     private var modelListID = -1
+    private var rateLimitsRequestID = -1
     public private(set) var controls = ChatControls()
     /// 用户选过的设置。codex 的 `turn/start` 接受这几项覆盖，对这一轮和之后都生效，
     /// 所以只是记下来，下一条消息带上；nil 表示用 codex 自己的配置。
@@ -251,6 +252,8 @@ public struct CodexChatProtocol: ChatProtocol {
             }
             modelListID = nextID()
             step.replies.append(request(modelListID, "model/list", [:]))
+            rateLimitsRequestID = nextID()
+            step.replies.append(request(rateLimitsRequestID, "account/rateLimits/read", [:]))
         } else if id == modelListID {
             controls.models = (result["data"] as? [[String: Any]] ?? []).compactMap(Self.model)
             if controls.model == nil {
@@ -258,6 +261,10 @@ public struct CodexChatProtocol: ChatProtocol {
                     .first { $0["isDefault"] as? Bool == true }.flatMap { ($0["model"] ?? $0["id"]) as? String }
             }
             refreshEffortLevels()
+        } else if id == rateLimitsRequestID {
+            if let usage = Self.rateLimits(result["rateLimits"] as? [String: Any]) {
+                step.events.append(.usage(usage))
+            }
         } else if id == threadRequestID, let thread = result["thread"] as? [String: Any] {
             threadID = thread["id"] as? String
             controls.model = modelOverride ?? result["model"] as? String ?? controls.model
@@ -322,7 +329,18 @@ public struct CodexChatProtocol: ChatProtocol {
         case "thread/tokenUsage/updated":
             let usage = params["tokenUsage"] as? [String: Any]
             let last = usage?["last"] as? [String: Any]
-            return ChatStep(events: [.context(tokens: last?["inputTokens"] as? Int, window: usage?["modelContextWindow"] as? Int)])
+            let total = usage?["total"] as? [String: Any]
+            var events: [StreamEvent] = []
+            if let total {
+                var snapshot = UsageSnapshot()
+                snapshot.inputTokens = total["inputTokens"] as? Int
+                snapshot.outputTokens = total["outputTokens"] as? Int
+                snapshot.cacheReadTokens = total["cachedInputTokens"] as? Int
+                snapshot.cacheWriteTokens = total["cacheWriteInputTokens"] as? Int
+                events.append(.usage(snapshot))
+            }
+            events.append(.context(tokens: last?["inputTokens"] as? Int, window: usage?["modelContextWindow"] as? Int))
+            return ChatStep(events: events)
         case "account/rateLimits/updated":
             return Self.rateLimits(params["rateLimits"] as? [String: Any]).map { ChatStep(events: [.usage($0)]) } ?? ChatStep()
         case "error":
