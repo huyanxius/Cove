@@ -64,9 +64,6 @@ struct FadeMap {
 enum BlurIn {
     static let duration: TimeInterval = 0.6
     static let radius: CGFloat = 6
-    /// 同一批字之间逐字错开的间隔，以及一批字错开的总上限。
-    static let perCharacter: TimeInterval = 0.025
-    static let maxStagger: TimeInterval = 0.35
 }
 
 @available(macOS 15, *)
@@ -96,8 +93,8 @@ struct BlurInRenderer: TextRenderer {
     }
 }
 
-/// 正在流式输出的回复。每批到达的字拆成单字、到达时间逐字错开，交给 `MarkdownText`
-/// 按原文位置对上；`BlurInRenderer` 按时间画模糊和透明度。
+/// 正在流式输出的回复。每个字何时开始浮现由 `RevealTimeline` 排定（严格按顺序），
+/// 交给 `MarkdownText` 按原文位置对上；`BlurInRenderer` 按时间画模糊和透明度。
 ///
 /// 这段文字只存在到这一块输出完为止，所以不开文字选中——macOS 上可选中的文字换一套控件绘制，
 /// 会绕过自定义渲染器。
@@ -116,19 +113,17 @@ struct StreamingReply: View {
         }
     }
 
+    /// 从第一个还没完全浮现的字起，给出后面每个字的浮现时间。时间线单调不减，所以从尾部
+    /// 往前找到第一个已经完全浮现的字就停。
     private func fade(at now: Date) -> FadeMap? {
-        let window = BlurIn.duration + BlurIn.maxStagger
-        var arrivals: [Date] = []
-        var fresh = 0
-        for chunk in chunks.reversed() {
-            guard now.timeIntervalSince(chunk.arrived) < window else { break }
-            let count = chunk.text.count
-            let step = min(BlurIn.perCharacter, BlurIn.maxStagger / Double(max(count, 1)))
-            arrivals.insert(contentsOf: (0..<count).map { chunk.arrived.addingTimeInterval(Double($0) * step) }, at: 0)
-            fresh += count
-        }
-        guard fresh > 0 else { return nil }
-        return FadeMap(start: draft.count - fresh, arrivals: arrivals)
+        let reveal = RevealTimeline.reveal(batches: chunks.map { ($0.text.count, $0.arrived.timeIntervalSinceReferenceDate) })
+        let clock = now.timeIntervalSinceReferenceDate
+        var start = reveal.count
+        while start > 0, clock < reveal[start - 1] + BlurIn.duration { start -= 1 }
+        guard start < reveal.count else { return nil }
+        // 字数以 draft 为准：分批拼接时极少数组合字符会在接缝处合并，两边差一两个字。
+        let offset = draft.count - reveal.count
+        return FadeMap(start: start + offset, arrivals: reveal[start...].map { Date(timeIntervalSinceReferenceDate: $0) })
     }
 }
 
