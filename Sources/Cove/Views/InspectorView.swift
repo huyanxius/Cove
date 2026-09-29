@@ -31,13 +31,13 @@ struct InspectorView: View {
             }
             if showUsage {
                 SwiftUI.Color.coveLine.frame(height: 1)
-                UsagePanel(usage: usage, cli: session?.cli)
+                UsagePanel(usage: usage, cli: session?.cli, surface: session?.surface)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
             }
             if showPet {
                 SwiftUI.Color.coveLine.frame(height: 1)
-                PetPanel(session: session, usage: session?.cli == .claude ? session?.usage : nil)
+                PetPanel(session: session, usage: usage)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
             }
