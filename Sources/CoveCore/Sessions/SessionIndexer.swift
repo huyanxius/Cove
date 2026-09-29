@@ -7,10 +7,15 @@ import Foundation
 /// 直接用缓存；变了也只经 `JSONLScanner` 预筛出标题行和人类消息行再解码。
 public final class SessionIndexer: @unchecked Sendable {
     public let root: URL
+    /// 设了就把备份里「原件已删」的会话也列出来。
+    public let archive: TranscriptArchive?
     private var cache: [String: (modified: Date, size: Int, summary: SessionSummary?)] = [:]
     private let lock = NSLock()
 
-    public init(root: URL) { self.root = root }
+    public init(root: URL, archive: TranscriptArchive? = nil) {
+        self.root = root
+        self.archive = archive
+    }
 
     public static var defaultRoot: URL {
         let base = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
@@ -51,6 +56,16 @@ public final class SessionIndexer: @unchecked Sendable {
         for (index, entry) in stale.enumerated() {
             cache[entry.file.path] = (entry.modified, entry.size, fresh[index])
             if let summary = fresh[index] { result.append(summary) }
+        }
+
+        for file in archive?.orphans() ?? [] {
+            seen.insert(file.path)
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if cache[file.path] == nil { cache[file.path] = (modified, 0, Self.summarize(file: file, modified: modified)) }
+            if var summary = cache[file.path]?.summary {
+                summary.isArchivedOnly = true
+                result.append(summary)
+            }
         }
 
         cache = cache.filter { seen.contains($0.key) }
