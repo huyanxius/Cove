@@ -25,16 +25,18 @@ public enum CodexSessions {
     public static func scan(database: URL?) -> [SessionSummary] {
         guard let database else { return [] }
         let sql = """
-            SELECT id, cwd, title, first_user_message, updated_at, updated_at_ms, git_branch
+            SELECT id, cwd, title, first_user_message, updated_at, updated_at_ms, git_branch, rollout_path
             FROM threads
             WHERE archived = 0 AND has_user_event = 1 AND thread_source = 'user'
             ORDER BY updated_at DESC
             """
         return SQLiteRows.query(database, sql) { row in
-            guard let id = row.text(0) else { return nil }
+            // 记录文件已经不在（在 Cove 里删掉了、或被清理了）的线程不列：点开也恢复不了。
+            guard let id = row.text(0), let rollout = row.text(7),
+                  FileManager.default.fileExists(atPath: rollout) else { return nil }
             let title = [row.text(2), row.text(3)].compactMap { $0 }.first { !$0.isEmpty } ?? ""
             let updated = row.double(5).map { $0 / 1000 } ?? row.double(4) ?? 0
-            return SessionSummary(id: id, fileURL: database, title: SessionSummarizer.flatten(title),
+            return SessionSummary(id: id, fileURL: URL(fileURLWithPath: rollout), title: SessionSummarizer.flatten(title),
                                   cwd: row.text(1).flatMap { $0.isEmpty ? nil : $0 }, gitBranch: row.text(6),
                                   lastActivity: Date(timeIntervalSince1970: updated), promptCount: 0, cli: .codex)
         }
@@ -58,10 +60,14 @@ public enum AgySessions {
             WHERE nesting_depth = 0
             ORDER BY last_modified_time DESC
             """
+        let conversations = database.deletingLastPathComponent().appendingPathComponent("conversations")
         return SQLiteRows.query(database, sql) { row in
+            // 对话本体是 conversations/<id>.db；它不在了（删掉了）就不列。
             guard let id = row.text(0) else { return nil }
+            let file = conversations.appendingPathComponent("\(id).db")
+            guard FileManager.default.fileExists(atPath: file.path) else { return nil }
             let title = [row.text(1), row.text(2)].compactMap { $0 }.first { !$0.isEmpty } ?? "Antigravity"
-            return SessionSummary(id: id, fileURL: database, title: SessionSummarizer.flatten(title),
+            return SessionSummary(id: id, fileURL: file, title: SessionSummarizer.flatten(title),
                                   cwd: workspace(row.text(3)), gitBranch: nil,
                                   lastActivity: timestamp(row.text(4)) ?? .distantPast, promptCount: 0, cli: .agy)
         }
