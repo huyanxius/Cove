@@ -68,10 +68,16 @@ enum Git {
         }.value
     }
 
-    private static func run(_ arguments: [String], in directory: String) -> (status: Int32, output: String, error: String) {
+    static func run(_ arguments: [String], in directory: String) -> (status: Int32, output: String, error: String) {
+        exec("/usr/bin/git", ["-C", directory] + arguments, in: nil)
+    }
+
+    /// 跑一个外部程序，读完 stdout / stderr 再等退出。
+    static func exec(_ executable: String, _ arguments: [String], in directory: String?) -> (status: Int32, output: String, error: String) {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", directory] + arguments
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        if let directory { process.currentDirectoryURL = URL(fileURLWithPath: directory) }
         let out = Pipe()
         let err = Pipe()
         process.standardOutput = out

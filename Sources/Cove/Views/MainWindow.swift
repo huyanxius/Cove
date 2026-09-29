@@ -36,6 +36,9 @@ struct MainWindow: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
+                if let session = model.selectedLive { OpenInMenu(folder: session.cwd) }
+            }
+            ToolbarItem(placement: .primaryAction) {
                 SettingsLink { Label("Settings", systemImage: "gearshape") }
                     .help("设置（⌘,）")
             }

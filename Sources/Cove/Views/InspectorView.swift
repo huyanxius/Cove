@@ -17,6 +17,8 @@ struct InspectorView: View {
                         SwiftUI.Color.coveLine.frame(height: 1)
                         ChangesSection(session: session)
                         SwiftUI.Color.coveLine.frame(height: 1)
+                        GitSection(session: session, repo: session.git)
+                        SwiftUI.Color.coveLine.frame(height: 1)
                         InfoSection(session: session)
                     }
                 }
