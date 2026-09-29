@@ -13,6 +13,10 @@ import Testing
         #expect(ClaudeLaunch.claudeArguments(.resume(sessionID: "abc"), theme: nil) == ["--resume", "abc"])
     }
 
+    @Test func worktreeLivesWhereClaudeCreatesIt() {
+        #expect(ClaudeLaunch.worktreePath(repoRoot: "/r/app", name: "cove-1a2b") == "/r/app/.claude/worktrees/cove-1a2b")
+    }
+
     @Test func quotesForPOSIXShells() {
         #expect(ClaudeLaunch.shellQuote("plain") == "'plain'")
         #expect(ClaudeLaunch.shellQuote("it's") == #"'it'\''s'"#)
