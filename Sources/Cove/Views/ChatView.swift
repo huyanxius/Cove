@@ -13,20 +13,22 @@ struct ChatView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(chat.log.items) { item in
-                        ChatRow(item: item, session: session, chat: chat).id(item.id)
+                        ChatRow(item: item, session: session, chat: chat)
+                            .padding(.top, spacing(before: item))
+                            .id(item.id)
                     }
                     if let draft = chat.log.draft, !draft.isEmpty {
-                        StreamingReply(draft: draft, chunks: chat.draftChunks)
+                        StreamingReply(draft: draft, chunks: chat.draftChunks).padding(.top, 18)
                     } else if chat.log.isWorking && chat.log.pendingPermission == nil {
-                        WorkingLine(phase: session.tracker.phase)
+                        WorkingLine(phase: session.tracker.phase).padding(.top, 18)
                     }
                     Color.clear.frame(height: 1).id(Self.bottom)
                 }
-                .frame(maxWidth: 780, alignment: .leading)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 24)
+                .frame(maxWidth: 660, alignment: .leading)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 28)
                 .frame(maxWidth: .infinity)
             }
             .defaultScrollAnchor(.bottom)
@@ -42,6 +44,17 @@ struct ChatView: View {
     }
 
     private static let bottom = "bottom"
+
+    /// 条目之间的间距决定层次：连续的工具调用挤成一组，组和正文之间、换人说话时留大空。
+    private func spacing(before item: ChatItem) -> CGFloat {
+        guard item.id > 0 else { return 0 }
+        let previous = chat.log.items[item.id - 1].kind
+        switch (previous, item.kind) {
+        case (.tool, .tool): return 3
+        case (_, .prompt), (.prompt, _): return 28
+        default: return 18
+        }
+    }
 }
 
 private struct ChatRow: View {
@@ -56,10 +69,11 @@ private struct ChatRow: View {
                 Spacer(minLength: 80)
                 Text(text)
                     .font(CoveFont.ui(14))
+                    .lineSpacing(5)
                     .foregroundStyle(SwiftUI.Color.coveT1)
                     .textSelection(.enabled)
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 9)
                     .background(SwiftUI.Color.coveSelect, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         case let .reply(text):
@@ -110,7 +124,7 @@ private struct ReplyBlock: View {
 }
 
 /// 一次工具调用：状态方块 + 动词 + 对象。文件类工具做完后可以点开 diff。
-private struct ToolLine: View {
+struct ToolLine: View {
     let call: ToolCall
     let openDiff: (String) -> Void
 
@@ -118,14 +132,13 @@ private struct ToolLine: View {
         HStack(spacing: 8) {
             Rectangle()
                 .fill(color)
-                .frame(width: 6, height: 6)
-                .opacity(call.state == .running ? 0.9 : 1)
-            Text(call.activity.verb)
-                .font(CoveFont.ui(12.5))
-                .foregroundStyle(SwiftUI.Color.coveT2)
+                .frame(width: 5, height: 5)
+            Text(Self.verb(call.activity))
+                .font(CoveFont.ui(12))
+                .foregroundStyle(SwiftUI.Color.coveT3)
             Text(call.activity.detail)
-                .font(CoveFont.mono(12))
-                .foregroundStyle(SwiftUI.Color.coveT1)
+                .font(CoveFont.mono(11.5))
+                .foregroundStyle(SwiftUI.Color.coveT2)
                 .lineLimit(1)
                 .truncationMode(.middle)
             if call.state == .failed {
@@ -138,6 +151,23 @@ private struct ToolLine: View {
             }
         }
         .padding(.leading, 2)
+    }
+
+    /// 对话里用中文动词；`ToolActivity` 的英文动词留给状态条。
+    static func verb(_ activity: ToolActivity) -> String {
+        switch activity.verb {
+        case "Running": "运行"
+        case "Editing": "编辑"
+        case "Writing": "写入"
+        case "Reading": "读取"
+        case "Searching": "搜索"
+        case "Searching the web": "搜索网页"
+        case "Fetching": "抓取"
+        case "Delegating": "委派"
+        case "Planning": "规划"
+        case "Using skill": "技能"
+        default: "调用"
+        }
     }
 
     private var color: SwiftUI.Color {
@@ -216,7 +246,7 @@ private struct WorkingLine: View {
     }
 
     private var label: String {
-        if case let .running(activity, _) = phase { return "\(activity.verb) \(activity.detail)" }
+        if case let .running(activity, _) = phase { return "\(ToolLine.verb(activity)) \(activity.detail)" }
         return "思考中…"
     }
 }
@@ -261,14 +291,27 @@ private struct StreamingReply: View {
         }
     }
 
+    /// 还在渐显中的那几批字，拆成单个字、到达时间逐字错开，一批字从左到右依次浮现，
+    /// 而不是整块同时出现。错开的总时长有上限，大段文字一次到达时也不会拖太久。
     private func fresh(at now: Date) -> [ChatBridge.DraftChunk] {
-        Array(chunks.reversed().prefix { now.timeIntervalSince($0.arrived) < BlurIn.duration }.reversed())
+        let window = BlurIn.duration + BlurIn.maxStagger
+        let recent = chunks.reversed().prefix { now.timeIntervalSince($0.arrived) < window }.reversed()
+        return recent.flatMap { chunk -> [ChatBridge.DraftChunk] in
+            let characters = Array(chunk.text)
+            let step = min(BlurIn.perCharacter, BlurIn.maxStagger / Double(max(characters.count, 1)))
+            return characters.enumerated().map { index, character in
+                ChatBridge.DraftChunk(text: String(character), arrived: chunk.arrived.addingTimeInterval(Double(index) * step))
+            }
+        }
     }
 }
 
 enum BlurIn {
-    static let duration: TimeInterval = 0.45
-    static let radius: CGFloat = 5
+    static let duration: TimeInterval = 0.6
+    static let radius: CGFloat = 6
+    /// 同一批字之间逐字错开的间隔，以及一批字错开的总上限。
+    static let perCharacter: TimeInterval = 0.025
+    static let maxStagger: TimeInterval = 0.35
 }
 
 @available(macOS 15, *)
@@ -306,24 +349,24 @@ struct MarkdownText: View {
 
     var body: some View {
         let blocks = MarkdownBlocks.split(text)
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 switch block {
                 case let .paragraph(body) where index == blocks.count - 1 && !fresh.isEmpty:
                     fading(body, inline: true)
-                        .font(CoveFont.ui(14))
-                        .lineSpacing(3)
-                        .foregroundStyle(SwiftUI.Color.coveT1)
+                        .font(CoveFont.ui(14.5))
+                        .lineSpacing(7)
+                        .foregroundStyle(SwiftUI.Color.coveBody)
                 case let .paragraph(body):
                     Text(Self.inline(body))
-                        .font(CoveFont.ui(14))
-                        .lineSpacing(3)
-                        .foregroundStyle(SwiftUI.Color.coveT1)
+                        .font(CoveFont.ui(14.5))
+                        .lineSpacing(7)
+                        .foregroundStyle(SwiftUI.Color.coveBody)
                 case let .heading(body):
                     Text(Self.inline(body))
-                        .font(CoveFont.ui(15, weight: .semibold))
+                        .font(CoveFont.ui(15.5, weight: .semibold))
                         .foregroundStyle(SwiftUI.Color.coveT1)
-                        .padding(.top, 4)
+                        .padding(.top, 6)
                 case let .code(_, body):
                     ScrollView(.horizontal, showsIndicators: false) {
                         (index == blocks.count - 1 && !fresh.isEmpty ? fading(body, inline: false) : Text(body))
@@ -336,7 +379,9 @@ struct MarkdownText: View {
                 }
             }
         }
-        .textSelection(.enabled)
+        // 可选中的文字在 macOS 上换成另一套控件绘制，会绕过 `BlurInRenderer`，渐显就没了。
+        // 流式中的那段本来只存在一瞬间，先不让选；落定成正式回复后照常可选。
+        .modifier(SelectableIf(fresh.isEmpty))
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -356,7 +401,15 @@ struct MarkdownText: View {
     }
 
     static func inline(_ text: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+        InlineMarkdown.attributed(text)
+    }
+}
+
+private struct SelectableIf: ViewModifier {
+    let enabled: Bool
+    init(_ enabled: Bool) { self.enabled = enabled }
+
+    func body(content: Content) -> some View {
+        if enabled { content.textSelection(.enabled) } else { content }
     }
 }

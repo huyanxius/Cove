@@ -15,6 +15,8 @@ enum Palette {
     static let raisedLine = dynamic(0xDCD8CD, 0x3F3E3A)
     static let select = dynamic(0xE4E1D7, 0x393834)
     static let t1 = dynamic(0x2A2925, 0xECEAE3)
+    /// 长段正文专用：比 t1 退半步。深色底上接近纯白的中文会显得发粗发亮，读长文累。
+    static let body = dynamic(0x33322D, 0xD6D3CA)
     static let t2 = dynamic(0x6A675F, 0xB3B0A7)
     static let t3 = dynamic(0x9A968C, 0x7F7C74)
     static let accent = dynamic(0x43699B, 0x93B4D8)
@@ -51,6 +53,7 @@ extension SwiftUI.Color {
     static let coveRaisedLine = SwiftUI.Color(nsColor: Palette.raisedLine)
     static let coveSelect = SwiftUI.Color(nsColor: Palette.select)
     static let coveT1 = SwiftUI.Color(nsColor: Palette.t1)
+    static let coveBody = SwiftUI.Color(nsColor: Palette.body)
     static let coveT2 = SwiftUI.Color(nsColor: Palette.t2)
     static let coveT3 = SwiftUI.Color(nsColor: Palette.t3)
     static let coveAccent = SwiftUI.Color(nsColor: Palette.accent)
