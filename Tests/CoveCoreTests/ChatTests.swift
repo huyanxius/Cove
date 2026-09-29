@@ -33,6 +33,13 @@ import Testing
         ])])
     }
 
+    @Test func modelsCarryTheirEffortLevels() {
+        let line = #"{"type":"control_response","response":{"subtype":"success","request_id":"i","response":{"models":[{"value":"opus","displayName":"Opus","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"]},{"value":"haiku","displayName":"Haiku","supportsEffort":false}]}}}"#
+        guard case let .sessionInfo(models, _) = StreamEvent.parse(line).first else { Issue.record("expected info"); return }
+        #expect(models[0].effortLevels == ["low", "medium", "high", "xhigh", "max"])
+        #expect(models[1].effortLevels.isEmpty)
+    }
+
     @Test func parsesSessionInfoAndModeChanges() {
         let line = #"{"type":"control_response","response":{"subtype":"success","request_id":"i","response":{"commands":[],"models":[{"value":"default","displayName":"Default (recommended)","description":"Opus 5.5"},{"value":"sonnet","displayName":"Sonnet 5.5"}],"current_permission_mode":"auto"}}}"#
         #expect(StreamEvent.parse(line) == [.commands([]), .sessionInfo(models: [
@@ -122,6 +129,13 @@ import Testing
         #expect((mode["request"] as? [String: Any])?["mode"] as? String == "acceptEdits")
         let model = try object(StreamInput.setModel("sonnet", requestID: "s"))
         #expect((model["request"] as? [String: Any])?["subtype"] as? String == "set_model")
+    }
+
+    @Test func effortRequestUsesFlagSettings() throws {
+        let effort = try object(StreamInput.setEffort("xhigh", requestID: "e"))
+        let request = try #require(effort["request"] as? [String: Any])
+        #expect(request["subtype"] as? String == "apply_flag_settings")
+        #expect((request["settings"] as? [String: Any])?["effortLevel"] as? String == "xhigh")
     }
 
     @Test func controlRequests() throws {
