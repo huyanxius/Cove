@@ -45,10 +45,19 @@ public enum ClaudeLaunch {
         shellCommand(shell: shell, program: "claude", arguments: claudeArguments)
     }
 
-    /// `program` 同样不加引号（codex、agy 也可能是 alias）。
-    public static func shellCommand(shell: String, program: String, arguments: [String]) -> (executable: String, args: [String]) {
+    /// `program` 同样不加引号（codex、agy 也可能是 alias）。`clearScreen` 只对终端有意义；
+    /// 走管道的 stream-json 进程不要它，stdout 上只该有 JSON 行。
+    public static func shellCommand(shell: String, program: String, arguments: [String],
+                                    clearScreen: Bool = true) -> (executable: String, args: [String]) {
         let line = ([program] + arguments.map(shellQuote)).joined(separator: " ")
-        return (shell, ["-l", "-i", "-c", #"printf '\033[H\033[2J\033[3J'; "# + line])
+        return (shell, ["-l", "-i", "-c", (clearScreen ? #"printf '\033[H\033[2J\033[3J'; "# : "") + line])
+    }
+
+    /// `claude -w <name>` 建工作树的位置：官方默认的 `<仓库根>/.claude/worktrees/<name>`。
+    /// 用户在 settings 里改了 worktree 位置的话这里会对不上——那种情况 Cove 的 Git 区会显示
+    /// 「不是 Git 仓库」，会话本身不受影响。
+    public static func worktreePath(repoRoot: String, name: String) -> String {
+        (repoRoot as NSString).appendingPathComponent(".claude/worktrees/" + name)
     }
 
     public static func shellQuote(_ value: String) -> String {
