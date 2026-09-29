@@ -19,6 +19,8 @@ final class ChatBridge {
     private(set) var models: [ModelOption] = []
     private(set) var modelValue = "default"
     private(set) var permissionMode: PermissionMode?
+    /// 启动时是否带了 `--allow-dangerously-skip-permissions`；没带就不能切到跳过权限。
+    private(set) var bypassAllowed = false
 
     struct DraftChunk {
         let text: String
@@ -44,6 +46,7 @@ final class ChatBridge {
     }
 
     func start(shell: String, arguments: [String], cwd: String, environment: [String: String]) -> Bool {
+        bypassAllowed = arguments.contains("--allow-dangerously-skip-permissions")
         let command = ClaudeLaunch.shellCommand(shell: shell, program: "claude", arguments: arguments, clearScreen: false)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: command.executable)

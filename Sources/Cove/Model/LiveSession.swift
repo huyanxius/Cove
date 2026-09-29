@@ -153,7 +153,8 @@ final class LiveSession: Identifiable {
             chat.replaceHistory(history)
             var environment = ProcessInfo.processInfo.environment
             environment["COVE_SESSION_ID"] = self.id
-            let arguments = ClaudeLaunch.streamArguments(self.mode) + self.worktreeArguments
+            let allowBypass = UserDefaults.standard.bool(forKey: "allowBypassPermissions")
+            let arguments = ClaudeLaunch.streamArguments(self.mode, allowBypass: allowBypass) + self.worktreeArguments
             if chat.start(shell: Self.loginShell(), arguments: arguments, cwd: self.launchDirectory, environment: environment) {
                 self.hasOutput = true
                 self.tail?.start()

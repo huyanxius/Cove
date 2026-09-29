@@ -115,7 +115,12 @@ struct Composer: View {
 
     private func modeMenu(_ chat: ChatBridge) -> some View {
         ChipMenu(title: chat.permissionMode?.title ?? "权限",
-                 options: PermissionMode.allCases.map { .init(id: $0.rawValue, title: $0.title, detail: $0.detail) },
+                 options: PermissionMode.allCases.map { mode in
+                     let locked = mode == .bypassPermissions && !chat.bypassAllowed
+                     return .init(id: mode.rawValue, title: mode.title,
+                                  detail: locked ? "要先在设置里打开「允许跳过权限模式」，并重开会话" : mode.detail,
+                                  enabled: !locked)
+                 },
                  selected: chat.permissionMode?.rawValue, footnote: "⇧⌘M 依次切换", help: "权限模式") { value in
             if let mode = PermissionMode(rawValue: value) { chat.setPermissionMode(mode) }
         }

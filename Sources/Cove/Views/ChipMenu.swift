@@ -12,6 +12,8 @@ struct ChipOption: Identifiable {
     let title: String
     var detail: String = ""
     var icon: AnyView?
+    /// 不可选的项照样列出来，灰掉并在副标题里说明原因。
+    var enabled = true
 }
 
 struct ChipMenu<Leading: View>: View {
@@ -78,6 +80,8 @@ private struct ChipMenuList: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(options) { option in
                 ChipMenuRow(option: option, selected: option.id == selected) { pick(option.id) }
+                    .disabled(!option.enabled)
+                    .opacity(option.enabled ? 1 : 0.45)
             }
             if let footnote {
                 Rectangle().fill(SwiftUI.Color.coveLine).frame(height: 1).padding(.vertical, 4)
