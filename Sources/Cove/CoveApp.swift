@@ -83,6 +83,14 @@ struct CoveApp: App {
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
                 .disabled(model.selectedLive?.chat == nil)
+                Button("Raise Effort") {
+                    guard let chat = model.selectedLive?.chat, !chat.effortLevels.isEmpty else { return }
+                    let levels = chat.effortLevels
+                    let index = chat.effortLevel.flatMap { levels.firstIndex(of: $0) } ?? levels.count / 2 - 1
+                    chat.setEffort(levels[(index + 1) % levels.count])
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(model.selectedLive?.chat == nil)
                 Button("Copy Last Reply") { model.copyLastReply() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                     .disabled(model.selectedLive?.cli != .claude)

@@ -30,23 +30,7 @@ struct ChipMenu<Leading: View>: View {
 
     var body: some View {
         Button { open.toggle() } label: {
-            HStack(spacing: 6) {
-                leading
-                Text(title)
-                    .font(CoveFont.ui(12, weight: .medium))
-                    .foregroundStyle(SwiftUI.Color.coveT1)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(SwiftUI.Color.coveT3)
-                    .rotationEffect(.degrees(open ? 180 : 0))
-            }
-            .padding(.horizontal, 9)
-            .frame(height: 26)
-            .background(hovering || open ? SwiftUI.Color.coveSelect : SwiftUI.Color.coveKey,
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(SwiftUI.Color.coveRaisedLine.opacity(0.7)))
-            .contentShape(Rectangle())
+            ChipLabel(title: title, active: hovering || open, open: open) { leading }
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -59,6 +43,117 @@ struct ChipMenu<Leading: View>: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: open)
+    }
+}
+
+/// 选项块本身的样子，`ChipMenu` 和强度滑块共用。
+struct ChipLabel<Leading: View>: View {
+    let title: String
+    let active: Bool
+    let open: Bool
+    @ViewBuilder let leading: Leading
+
+    var body: some View {
+        HStack(spacing: 6) {
+            leading
+            Text(title)
+                .font(CoveFont.ui(12, weight: .medium))
+                .foregroundStyle(SwiftUI.Color.coveT1)
+                .lineLimit(1)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(SwiftUI.Color.coveT3)
+                .rotationEffect(.degrees(open ? 180 : 0))
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 26)
+        .background(active ? SwiftUI.Color.coveSelect : SwiftUI.Color.coveKey,
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(SwiftUI.Color.coveRaisedLine.opacity(0.7)))
+        .contentShape(Rectangle())
+    }
+}
+
+/// 思考强度：档位是离散的（每个模型自己报支持哪几档），所以是一根只停在刻度上的滑块。
+/// 松手才生效，拖的过程中不连发请求。
+struct EffortMenu: View {
+    let levels: [String]
+    let current: String?
+    let pick: (String) -> Void
+
+    @State private var open = false
+    @State private var hovering = false
+    @State private var position: Double = 0
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            ChipLabel(title: current.map { "强度 · \(Self.title($0))" } ?? "强度 · 默认", active: hovering || open, open: open) {
+                Image(systemName: "gauge.with.dots.needle.33percent")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(SwiftUI.Color.coveT2)
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .disabled(levels.isEmpty)
+        .help(levels.isEmpty ? "当前模型不支持调整思考强度" : "思考强度（⇧⌘E 调高一档）")
+        .popover(isPresented: $open, arrowEdge: .top) { panel }
+        .onChange(of: open) { _, isOpen in
+            if isOpen { position = Double(levels.firstIndex(of: current ?? "") ?? levels.count / 2) }
+        }
+    }
+
+    private var panel: some View {
+        let index = min(max(Int(position.rounded()), 0), max(levels.count - 1, 0))
+        let level = levels.isEmpty ? "" : levels[index]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("思考强度").font(CoveFont.ui(12.5, weight: .semibold)).foregroundStyle(SwiftUI.Color.coveT1)
+                Spacer()
+                Text(Self.title(level)).font(CoveFont.ui(12.5, weight: .medium)).foregroundStyle(SwiftUI.Color.coveAccent)
+            }
+            Slider(value: $position, in: 0...Double(max(levels.count - 1, 1)), step: 1) { editing in
+                if !editing, !level.isEmpty { pick(level) }
+            }
+            .tint(SwiftUI.Color.coveAccent)
+            HStack {
+                ForEach(levels, id: \.self) { item in
+                    Text(Self.title(item))
+                        .font(CoveFont.ui(10.5))
+                        .foregroundStyle(item == level ? SwiftUI.Color.coveT1 : SwiftUI.Color.coveT3)
+                    if item != levels.last { Spacer(minLength: 0) }
+                }
+            }
+            Text(Self.detail(level))
+                .font(CoveFont.ui(11.5))
+                .foregroundStyle(SwiftUI.Color.coveT2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(width: 280)
+        .background(SwiftUI.Color.coveRaised)
+    }
+
+    static func title(_ level: String) -> String {
+        switch level {
+        case "low": "低"
+        case "medium": "中"
+        case "high": "高"
+        case "xhigh": "很高"
+        case "max": "最高"
+        default: level
+        }
+    }
+
+    static func detail(_ level: String) -> String {
+        switch level {
+        case "low": "想得最少，回得最快，适合简单问答和小改动。"
+        case "medium": "日常编码的平衡点。"
+        case "high": "复杂任务、跨文件改动时多想一步。"
+        case "xhigh": "更深的推理，明显更慢，也更耗额度。"
+        case "max": "能想多深想多深：最慢、最耗额度，留给真正难的问题。"
+        default: ""
+        }
     }
 }
 

@@ -19,6 +19,8 @@ final class ChatBridge {
     private(set) var models: [ModelOption] = []
     private(set) var modelValue = "default"
     private(set) var permissionMode: PermissionMode?
+    /// 当前思考强度。协议不回报它，初值取用户 settings.json 里的 `effortLevel`，没设为 nil（显示「默认」）。
+    private(set) var effortLevel: String? = ChatBridge.configuredEffort()
     /// 启动时是否带了 `--allow-dangerously-skip-permissions`；没带就不能切到跳过权限。
     private(set) var bypassAllowed = false
 
@@ -113,6 +115,23 @@ final class ChatBridge {
     func setModel(_ option: ModelOption) {
         modelValue = option.value
         write(StreamInput.setModel(option.value, requestID: nextRequestID()))
+    }
+
+    func setEffort(_ level: String) {
+        effortLevel = level
+        write(StreamInput.setEffort(level, requestID: nextRequestID()))
+    }
+
+    /// 当前模型支持的强度档位；「default」这一项在初始化应答里同样带着档位。
+    var effortLevels: [String] {
+        models.first { $0.value == modelValue }?.effortLevels ?? []
+    }
+
+    private static func configuredEffort() -> String? {
+        let url = SessionIndexer.defaultRoot.deletingLastPathComponent().appendingPathComponent("settings.json")
+        guard let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return object["effortLevel"] as? String
     }
 
     func interrupt() {

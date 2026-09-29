@@ -49,6 +49,7 @@ struct Composer: View {
                 cliMenu.padding(.trailing, 2)
                 if let chat = session.chat {
                     modelMenu(chat)
+                    EffortMenu(levels: chat.effortLevels, current: chat.effortLevel) { chat.setEffort($0) }
                     modeMenu(chat).padding(.trailing, 6)
                 }
                 // 只有输入框为空时按键才会交给 CLI，所以提示也只在那时出现。
