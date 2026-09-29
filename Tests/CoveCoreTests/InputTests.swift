@@ -25,7 +25,17 @@ import Testing
     @Test func typingStaysInComposer() {
         #expect(route(.character("a"), empty: true) == .composer)
         #expect(route(.character("1"), empty: true) == .composer)
-        #expect(route(.character("/"), empty: true) == .composer)
+        #expect(route(.character("/"), empty: false) == .composer)
+    }
+
+    @Test func slashOnEmptyComposerHandsOverToTheCLIInput() {
+        #expect(route(.character("/"), empty: true) == .handoff([0x2F]))
+        #expect(route(.character("!"), .shift, empty: true) == .handoff([0x21]))
+        #expect(route(.character("/"), .command, empty: true) == .composer)
+    }
+
+    @Test func backspaceOnEmptyComposerStaysPut() {
+        #expect(route(.backspace, empty: true) == .composer)
     }
 
     @Test func nonEmptyComposerKeepsEverything() {
@@ -76,5 +86,46 @@ import Testing
 
     @Test func keepsUnicodeIntact() {
         #expect(PasteEncoder.paste("中文 ✓") == start + Array("中文 ✓".utf8) + end)
+    }
+}
+
+@Suite struct DirectInputTests {
+    /// 依次喂按键，返回每一步是否交还键盘。
+    func run(_ strokes: [KeyStroke]) -> [Bool] {
+        var input = DirectInput()
+        return strokes.map { input.record($0) }
+    }
+
+    @Test func enterGivesTheKeyboardBack() {
+        #expect(run([KeyStroke(key: .character("c")), KeyStroke(key: .enter)]) == [false, true])
+    }
+
+    @Test func deletingTheSlashGivesTheKeyboardBack() {
+        #expect(run([KeyStroke(key: .character("m")), KeyStroke(key: .backspace), KeyStroke(key: .backspace)])
+            == [false, false, true])
+    }
+
+    @Test func menuNavigationKeepsTheKeyboard() {
+        #expect(run([KeyStroke(key: .down), KeyStroke(key: .escape), KeyStroke(key: .enter, modifiers: .shift)])
+            == [false, false, false])
+    }
+
+    @Test func stickyModeNeverEndsByItself() {
+        var input = DirectInput(sticky: true)
+        let results = [KeyStroke(key: .enter), KeyStroke(key: .character("c"), modifiers: .control),
+                       KeyStroke(key: .backspace)].map { input.record($0) }
+        #expect(results == [false, false, false])
+    }
+
+    @Test func afterTabCompletionOnlyEnterOrInterruptEnds() {
+        #expect(run([KeyStroke(key: .tab), KeyStroke(key: .backspace), KeyStroke(key: .backspace),
+                     KeyStroke(key: .character("c"), modifiers: .control)]) == [false, false, false, true])
+    }
+}
+
+@Suite struct AttachmentReferenceTests {
+    @Test func quotesPathsWithSpaces() {
+        #expect(AttachmentReference.text(for: ["/a/b.png", "/Users/me/My Docs/x.md"]) == #" /a/b.png "/Users/me/My Docs/x.md" "#)
+        #expect(AttachmentReference.text(for: []) == "")
     }
 }
