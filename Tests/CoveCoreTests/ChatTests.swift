@@ -475,11 +475,29 @@ import Testing
 
     @Test func usageAndLimits() {
         var codex = CodexChatProtocol(cwd: "/p", resume: nil)
-        let tokens = #"{"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"last":{"inputTokens":29611},"modelContextWindow":258400}}}"#
-        #expect(codex.receive(tokens).events == [.context(tokens: 29611, window: 258400)])
+        let tokens = #"{"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"total":{"inputTokens":120000,"outputTokens":4500,"cachedInputTokens":90000,"cacheWriteInputTokens":1000},"last":{"inputTokens":29611},"modelContextWindow":258400}}}"#
+        let events = codex.receive(tokens).events
+        #expect(events.contains(.context(tokens: 29611, window: 258400)))
+        guard case let .usage(totals) = events.first else { Issue.record("expected token totals"); return }
+        #expect(totals.inputTokens == 120000)
+        #expect(totals.outputTokens == 4500)
+        #expect(totals.cacheReadTokens == 90000)
+        #expect(totals.cacheWriteTokens == 1000)
         let limits = #"{"method":"account/rateLimits/updated","params":{"rateLimits":{"primary":{"usedPercent":10,"windowDurationMins":10080,"resetsAt":1791056965},"secondary":null}}}"#
         guard case let .usage(usage) = codex.receive(limits).events.first else { Issue.record("expected usage"); return }
         #expect(usage.sevenDayPercent == 10 && usage.fiveHourPercent == nil)
+    }
+
+    @Test func readsCurrentAccountLimitsAfterInitialize() throws {
+        var codex = CodexChatProtocol(cwd: "/p", resume: nil)
+        _ = codex.opening()
+        let requests = codex.receive(#"{"id":1,"result":{}}"#).replies
+        let read = try #require(requests.compactMap { try? object($0) }.first { $0["method"] as? String == "account/rateLimits/read" })
+        let id = try #require(read["id"] as? Int)
+        let reply = #"{"id":\#(id),"result":{"rateLimits":{"primary":{"usedPercent":13,"windowDurationMins":10080,"resetsAt":1791056965},"secondary":{"usedPercent":35,"windowDurationMins":300,"resetsAt":1790710200}}}}"#
+        guard case let .usage(usage) = codex.receive(reply).events.first else { Issue.record("expected initial limits"); return }
+        #expect(usage.fiveHourPercent == 35)
+        #expect(usage.sevenDayPercent == 13)
     }
 
     @Test func resumeRequestsTheThreadAndReplaysHistory() throws {
