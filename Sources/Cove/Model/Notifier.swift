@@ -21,8 +21,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().delegate = self
     }
 
-    /// 每次轮询把每个打开着的会话的状态喂进来。
-    func observe(_ sessions: [LiveSession], selected: String?) {
+    /// 每次轮询把每个打开着的会话的状态喂进来；返回这一轮发生的变化（给侧栏的未读点用）。
+    @discardableResult
+    func observe(_ sessions: [LiveSession], selected: String?) -> [(String, Attention.Event)] {
+        var events: [(String, Attention.Event)] = []
         let alive = Set(sessions.map(\.id))
         attention = attention.filter { alive.contains($0.key) }
         for session in sessions where session.isRunning {
@@ -30,10 +32,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             let event = tracker.observe(state(of: session))
             attention[session.id] = tracker
             guard let event else { continue }
+            events.append((session.id, event))
             // 正看着它就不打扰。
             if NSApp.isActive && selected == session.id { continue }
             post(event, for: session)
         }
+        return events
     }
 
     private func state(of session: LiveSession) -> Attention.State {

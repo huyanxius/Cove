@@ -19,11 +19,30 @@ final class AppModel {
     private(set) var live: [String: LiveSession] = [:]
     private(set) var hasLoaded = false
     var selection: String? {
-        didSet { if let selection, selection != oldValue { open(selection) } }
+        didSet {
+            guard let selection, selection != oldValue else { return }
+            unread.remove(selection)
+            open(selection)
+        }
     }
     var searchText = ""
     var showInspector = true
     var expandedGroups: Set<String> = []
+
+    /// 置顶、归档、改名：只记在 Cove 里（见 `SessionMarks`），改完立刻存。
+    private(set) var marks: SessionMarks = AppModel.loadMarks() {
+        didSet { Self.saveMarks(marks) }
+    }
+    /// 侧栏顶部的 CLI 筛选；nil = 全部。
+    var cliFilter: CLIKind?
+    /// 只看已归档的会话。
+    var showingArchive = false
+    /// 按项目分组，还是全部按时间平铺。
+    var groupByProject = UserDefaults.standard.object(forKey: "groupByProject") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(groupByProject, forKey: "groupByProject") }
+    }
+    /// 在你没看着的时候跑完、或卡在批准上的会话，侧栏亮一个点，点开就灭。
+    private(set) var unread: Set<String> = []
 
     @ObservationIgnored let archive = TranscriptArchive(source: SessionIndexer.defaultRoot,
                                                         destination: TranscriptArchive.defaultDestination)
@@ -83,7 +102,8 @@ final class AppModel {
         hasLoaded = true
         adoptExternalIDs()
         for summary in sessions {
-            if let session = live[summary.id], session.title != summary.title { session.title = summary.title }
+            let title = marks.titles[summary.id] ?? summary.title
+            if let session = live[summary.id], session.title != title { session.title = title }
         }
     }
 
@@ -147,21 +167,19 @@ final class AppModel {
                                       cwd: session.cwd, gitBranch: nil, lastActivity: session.startedAt, promptCount: 0,
                                       cli: session.cli))
         }
-        let query = searchText.trimmingCharacters(in: .whitespaces)
-        if !query.isEmpty {
-            all = all.filter { $0.title.localizedCaseInsensitiveContains(query) || ($0.cwd ?? "").localizedCaseInsensitiveContains(query) }
-        }
-        return all.sorted { $0.lastActivity > $1.lastActivity }
+        return all
     }
 
-    /// 「临时」分区：放在 Cove 临时目录里的会话，按时间倒序，不按文件夹分组。
-    var scratchSessions: [SessionSummary] {
-        allSummaries.filter { ScratchSpace.isScratch(cwd: $0.cwd) }
+    /// 侧栏的几个区（置顶 / 临时 / 其余），筛选和整理规则见 `SessionOrganizer`。
+    var sections: SessionOrganizer.Sections {
+        SessionOrganizer.organize(allSummaries, marks: marks,
+                                  filter: SessionFilter(cli: cliFilter, archivedOnly: showingArchive, query: searchText)) {
+            ScratchSpace.isScratch(cwd: $0.cwd)
+        }
     }
 
     /// 「项目」分区：按文件夹分组的正式会话。
-    var groups: [ProjectGroup] {
-        let all = allSummaries.filter { !ScratchSpace.isScratch(cwd: $0.cwd) }
+    func groups(_ all: [SessionSummary]) -> [ProjectGroup] {
         let query = searchText.trimmingCharacters(in: .whitespaces)
 
         var order: [String] = []
@@ -193,7 +211,7 @@ final class AppModel {
         // 原件已被 CLI 清理：先从备份拷回原处，--resume 才找得到。
         if summary.isArchivedOnly { _ = try? archive.restore(summary.fileURL) }
         let cwd = summary.cwd ?? FileManager.default.homeDirectoryForCurrentUser.path
-        let session = LiveSession(id: id, cwd: cwd, title: summary.title, mode: .resume(sessionID: id),
+        let session = LiveSession(id: id, cwd: cwd, title: marks.titles[id] ?? summary.title, mode: .resume(sessionID: id),
                                   cli: summary.cli, surface: InterfaceMode.current.surface(for: summary.cli), indexer: indexer)
         live[id] = session
         session.start()
@@ -263,6 +281,71 @@ final class AppModel {
         session.focusRequest += 1
     }
 
+    // MARK: 整理
+
+    func isPinned(_ id: String) -> Bool { marks.pinned.contains(id) }
+    func isArchived(_ id: String) -> Bool { marks.archived.contains(id) }
+    func isUnread(_ id: String) -> Bool { unread.contains(id) }
+
+    func togglePin(_ id: String) {
+        if marks.pinned.remove(id) == nil { marks.pinned.insert(id) }
+    }
+
+    /// 归档：从侧栏收起，不删任何东西。正在跑的会话一并关掉，和官方桌面端一致。
+    func toggleArchive(_ id: String) {
+        if marks.archived.remove(id) == nil {
+            marks.archived.insert(id)
+            marks.pinned.remove(id)
+            close(id)
+            if selection == id { selection = nil }
+        }
+    }
+
+    /// 空名字 = 恢复成 CLI 自己的标题。
+    func rename(_ id: String, to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        marks.titles[id] = trimmed.isEmpty ? nil : trimmed
+        live[id]?.title = trimmed.isEmpty ? (sessions.first { $0.id == id }?.title ?? live[id]?.title ?? "") : trimmed
+    }
+
+    func toggleUnread(_ id: String) {
+        if unread.remove(id) == nil { unread.insert(id) }
+    }
+
+    /// 删除：会话文件移进废纸篓（能从废纸篓找回），Cove 的备份也一起挪走。
+    /// claude 是 JSONL（连同同名的子 agent 目录），codex 是 rollout 文件，agy 是对话库（连同 -wal / -shm）。
+    func delete(_ summary: SessionSummary) {
+        close(summary.id)
+        if selection == summary.id { selection = nil }
+        var files = [summary.fileURL]
+        switch summary.cli {
+        case .claude:
+            files.append(summary.fileURL.deletingPathExtension())
+            let project = summary.fileURL.deletingLastPathComponent().lastPathComponent
+            files.append(archive.destination.appendingPathComponent(project).appendingPathComponent(summary.fileURL.lastPathComponent))
+        case .agy:
+            files += ["-wal", "-shm"].map { URL(fileURLWithPath: summary.fileURL.path + $0) }
+        case .codex:
+            break
+        }
+        for file in files where file.path != "/dev/null" && FileManager.default.fileExists(atPath: file.path) {
+            try? FileManager.default.trashItem(at: file, resultingItemURL: nil)
+        }
+        marks.forget(summary.id)
+        unread.remove(summary.id)
+        Task { await refresh() }
+    }
+
+    private static func loadMarks() -> SessionMarks {
+        guard let data = UserDefaults.standard.data(forKey: "sessionMarks"),
+              let marks = try? JSONDecoder().decode(SessionMarks.self, from: data) else { return SessionMarks() }
+        return marks
+    }
+
+    private static func saveMarks(_ marks: SessionMarks) {
+        if let data = try? JSONEncoder().encode(marks) { UserDefaults.standard.set(data, forKey: "sessionMarks") }
+    }
+
     func close(_ id: String) {
         live.removeValue(forKey: id)?.terminate()
     }
@@ -329,7 +412,10 @@ final class AppModel {
     }
 
     func checkAttention() {
-        Notifier.shared.observe(Array(live.values), selected: selection)
+        for (id, _) in Notifier.shared.observe(Array(live.values), selected: selection)
+        where !(NSApp.isActive && selection == id) {
+            unread.insert(id)
+        }
     }
 
     var projectCount: Int { Set(sessions.compactMap(\.cwd)).count }
