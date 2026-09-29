@@ -192,8 +192,16 @@ private struct SessionRow: View {
                         .font(CoveFont.ui(13))
                         .foregroundStyle(SwiftUI.Color.coveT1)
                         .lineLimit(1)
-                    if let live, live.cli != .claude {
-                        Text(live.cli.displayName)
+                    if summary.isArchivedOnly {
+                        Text("已备份")
+                            .font(CoveFont.ui(9.5))
+                            .foregroundStyle(SwiftUI.Color.coveT3)
+                            .padding(.horizontal, 4)
+                            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(SwiftUI.Color.coveLine))
+                            .help("原记录已被 claude 清理，这是 Cove 的备份；点开会先复原")
+                    }
+                    if summary.cli != .claude {
+                        Text(summary.cli.displayName)
                             .font(CoveFont.mono(9))
                             .foregroundStyle(SwiftUI.Color.coveAccent)
                             .padding(.horizontal, 4)

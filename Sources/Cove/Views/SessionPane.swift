@@ -1,3 +1,4 @@
+import CoveCore
 import SwiftUI
 
 /// 中栏：标签条（终端 + 打开的 diff）、终端或 diff、输入框。
@@ -6,25 +7,43 @@ import SwiftUI
 /// 终端在两种外观下都铺满中栏，和外壳连成一片，不加描边。
 struct SessionPane: View {
     let session: LiveSession
+    @AppStorage("interfaceMode") private var interfaceMode = InterfaceMode.composer
 
     var body: some View {
         VStack(spacing: 0) {
             TabBar(session: session)
             content
-            Composer(session: session)
+            // 「原生 CLI」档只有终端；Cove 界面没有终端，输入框必须在。
+            if interfaceMode.showsComposer || session.chat != nil {
+                Composer(session: session)
+            }
         }
         .background(SwiftUI.Color.coveBg)
+        .onChange(of: session.focusRequest, initial: true) { _, _ in focusTerminalIfNative() }
+        .onChange(of: interfaceMode) { _, _ in focusTerminalIfNative() }
+    }
+
+    /// 没有 Cove 输入框时，「聚焦输入框」就是聚焦终端本身。
+    private func focusTerminalIfNative() {
+        guard !interfaceMode.showsComposer, session.chat == nil else { return }
+        DispatchQueue.main.async { session.terminal.window?.makeFirstResponder(session.terminal) }
     }
 
 
     private var content: some View {
         ZStack {
-            TerminalHost(session: session)
-                .opacity(session.activeTab == .terminal ? 1 : 0)
-                .allowsHitTesting(session.activeTab == .terminal)
+            if let chat = session.chat {
+                ChatView(session: session, chat: chat)
+                    .opacity(session.activeTab == .terminal ? 1 : 0)
+                    .allowsHitTesting(session.activeTab == .terminal)
+            } else {
+                TerminalHost(session: session)
+                    .opacity(session.activeTab == .terminal ? 1 : 0)
+                    .allowsHitTesting(session.activeTab == .terminal)
+            }
             if session.isRunning && !session.hasOutput && session.activeTab == .terminal {
                 ZStack {
-                    SwiftUI.Color(nsColor: session.terminal.nativeBackgroundColor)
+                    session.chat != nil ? SwiftUI.Color.coveBg : SwiftUI.Color(nsColor: session.terminal.nativeBackgroundColor)
                     CoffeeLoader(size: 76, caption: "正在启动 \(session.cli.displayName)…")
                 }
                 .transition(.opacity)
@@ -32,7 +51,11 @@ struct SessionPane: View {
             if case let .diff(path) = session.activeTab {
                 DiffView(path: path, cwd: session.cwd,
                          revision: session.tracker.changes.files.first { $0.path == path }?.editCount ?? 0,
-                         delta: session.fileDeltas[path])
+                         delta: session.fileDeltas[path],
+                         sendReview: session.isRunning ? { text in
+                             session.send(text)
+                             session.activeTab = .terminal
+                         } : nil)
             }
         }
     }
@@ -46,8 +69,9 @@ private struct TabBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
                 tab(.terminal) {
-                    Image(systemName: "terminal").font(.system(size: 11))
-                    Text("Terminal").font(CoveFont.ui(12, weight: isActive(.terminal) ? .medium : .regular))
+                    Image(systemName: session.chat != nil ? "bubble.left" : "terminal").font(.system(size: 11))
+                    Text(session.chat != nil ? "对话" : "Terminal")
+                        .font(CoveFont.ui(12, weight: isActive(.terminal) ? .medium : .regular))
                 }
                 ForEach(session.openDiffs, id: \.self) { path in
                     tab(.diff(path)) {
