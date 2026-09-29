@@ -266,3 +266,22 @@ import Testing
         #expect(run([.idle, .idle]) == [nil, nil])
     }
 }
+
+@Suite struct InlineMarkdownTests {
+    func boldText(_ value: AttributedString) -> [String] {
+        value.runs.filter { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true }
+            .map { String(value[$0.range].characters) }
+    }
+
+    @Test func boldWorksWhenPunctuationMeetsChinese() {
+        let value = InlineMarkdown.attributed("前端是拿**若依(RuoYi)**改的")
+        #expect(String(value.characters) == "前端是拿若依(RuoYi)改的")
+        #expect(boldText(value) == ["若依(RuoYi)"])
+    }
+
+    @Test func keepsOtherInlineSyntax() {
+        let value = InlineMarkdown.attributed("看 `gitee.com` 和 **两处**")
+        #expect(String(value.characters) == "看 gitee.com 和 两处")
+        #expect(boldText(value) == ["两处"])
+    }
+}
