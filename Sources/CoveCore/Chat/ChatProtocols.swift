@@ -14,6 +14,14 @@ public protocol ChatProtocol: Sendable {
     mutating func answer(_ request: PermissionRequest, allow: Bool) -> [String]
     /// 对面支持中途打断。不支持的，界面上就不给停止按钮。
     var canInterrupt: Bool { get }
+
+    var controls: ChatControls { get }
+    mutating func setModel(_ value: String) -> ControlChange
+    mutating func setEffort(_ level: String) -> ControlChange
+    mutating func setMode(_ id: String) -> ControlChange
+    /// CLI 自己给这个会话的 ID（codex 的线程 ID、agy 的对话 ID），拿到后 Cove 用它认领会话；
+    /// claude 的 ID 是 Cove 预先指定的，这里为 nil。
+    var externalID: String? { get }
 }
 
 public struct ChatStep: Equatable, Sendable {
@@ -32,14 +40,57 @@ public struct ChatStep: Equatable, Sendable {
 /// claude 的 stream-json：见 `StreamEvent` / `StreamInput`。
 public struct ClaudeChatProtocol: ChatProtocol {
     private var counter = 0
+    public private(set) var controls = ChatControls()
 
-    public init() {}
+    /// `effort`：用户 settings.json 里的 `effortLevel`。协议不回报当前强度，只能从这里起步。
+    public init(effort: String? = nil) {
+        controls.effort = effort
+        controls.model = "default"
+        controls.modes = PermissionMode.allCases.map(\.rawValue)
+    }
 
     public var canInterrupt: Bool { true }
+    public var externalID: String? { nil }
 
     public mutating func opening() -> [String] { [StreamInput.initialize(requestID: nextID())] }
 
-    public mutating func receive(_ line: String) -> ChatStep { ChatStep(events: StreamEvent.parse(line)) }
+    public mutating func receive(_ line: String) -> ChatStep {
+        let events = StreamEvent.parse(line)
+        for event in events {
+            switch event {
+            case let .sessionInfo(models, mode):
+                controls.models = models
+                controls.mode = mode ?? controls.mode
+                refreshEffortLevels()
+            case let .permissionMode(mode):
+                controls.mode = mode
+            default:
+                break
+            }
+        }
+        return ChatStep(events: events)
+    }
+
+    public mutating func setModel(_ value: String) -> ControlChange {
+        controls.model = value
+        refreshEffortLevels()
+        return .send([StreamInput.setModel(value, requestID: nextID())])
+    }
+
+    public mutating func setEffort(_ level: String) -> ControlChange {
+        controls.effort = level
+        return .send([StreamInput.setEffort(level, requestID: nextID())])
+    }
+
+    /// 当前模式等 claude 应答（或 status 事件）回来才改，切换被拒时界面不会显示成已切换。
+    public mutating func setMode(_ id: String) -> ControlChange {
+        guard let mode = PermissionMode(rawValue: id) else { return .send([]) }
+        return .send([StreamInput.setPermissionMode(mode, requestID: nextID())])
+    }
+
+    private mutating func refreshEffortLevels() {
+        controls.effortLevels = controls.models.first { $0.value == controls.model }?.effortLevels ?? []
+    }
 
     public mutating func send(_ text: String) -> [String] { [StreamInput.userMessage(text)] }
 
@@ -78,13 +129,75 @@ public struct CodexChatProtocol: ChatProtocol {
     private var changePaths: [String: String] = [:]
     /// 审批请求 id → 原始 JSON 片段（数字或字符串）。
     private var approvals: [String: String] = [:]
+    private var modelListID = -1
+    public private(set) var controls = ChatControls()
+    /// 用户选过的设置。codex 的 `turn/start` 接受这几项覆盖，对这一轮和之后都生效，
+    /// 所以只是记下来，下一条消息带上；nil 表示用 codex 自己的配置。
+    private var modelOverride: String?
+    private var effortOverride: String?
+    private var modeOverride: String?
 
-    public init(cwd: String, resume: String?) {
+    /// 三档对应官方 Codex App 的叫法：只读 / 自动（可写工作区，越界询问）/ 完全访问。
+    public static let modes = ["read-only", "auto", "full-access"]
+
+    public init(cwd: String, resume: String?, model: String? = nil, effort: String? = nil, mode: String? = nil) {
         self.cwd = cwd
         self.resumeID = resume
+        modelOverride = model
+        effortOverride = effort
+        modeOverride = mode.flatMap { Self.modes.contains($0) ? $0 : nil }
+        controls.modes = Self.modes
+        controls.model = model
+        controls.effort = effort
+        controls.mode = modeOverride
     }
 
     public var canInterrupt: Bool { true }
+    public var externalID: String? { threadID }
+
+    public mutating func setModel(_ value: String) -> ControlChange {
+        modelOverride = value
+        controls.model = value
+        refreshEffortLevels()
+        return .send([])
+    }
+
+    public mutating func setEffort(_ level: String) -> ControlChange {
+        effortOverride = level
+        controls.effort = level
+        return .send([])
+    }
+
+    public mutating func setMode(_ id: String) -> ControlChange {
+        guard Self.modes.contains(id) else { return .send([]) }
+        modeOverride = id
+        controls.mode = id
+        return .send([])
+    }
+
+    private mutating func refreshEffortLevels() {
+        controls.effortLevels = controls.models.first { $0.value == controls.model }?.effortLevels ?? []
+    }
+
+    /// 权限档位 → `approvalPolicy` + `sandboxPolicy`。
+    static func policy(_ mode: String) -> (approval: String, sandbox: [String: Any]) {
+        switch mode {
+        case "read-only": ("on-request", ["type": "readOnly"])
+        case "full-access": ("never", ["type": "dangerFullAccess"])
+        default: ("on-request", ["type": "workspaceWrite"])
+        }
+    }
+
+    /// 线程应答里的沙箱 → 档位。
+    static func mode(fromSandbox sandbox: Any?) -> String? {
+        let type = (sandbox as? [String: Any])?["type"] as? String ?? sandbox as? String
+        switch type {
+        case "readOnly", "read-only": return "read-only"
+        case "workspaceWrite", "workspace-write": return "auto"
+        case "dangerFullAccess", "danger-full-access": return "full-access"
+        default: return nil
+        }
+    }
 
     public mutating func opening() -> [String] {
         initializeID = nextID()
@@ -136,8 +249,21 @@ public struct CodexChatProtocol: ChatProtocol {
             } else {
                 step.replies.append(request(threadRequestID, "thread/start", ["cwd": cwd]))
             }
+            modelListID = nextID()
+            step.replies.append(request(modelListID, "model/list", [:]))
+        } else if id == modelListID {
+            controls.models = (result["data"] as? [[String: Any]] ?? []).compactMap(Self.model)
+            if controls.model == nil {
+                controls.model = (result["data"] as? [[String: Any]] ?? [])
+                    .first { $0["isDefault"] as? Bool == true }.flatMap { ($0["model"] ?? $0["id"]) as? String }
+            }
+            refreshEffortLevels()
         } else if id == threadRequestID, let thread = result["thread"] as? [String: Any] {
             threadID = thread["id"] as? String
+            controls.model = modelOverride ?? result["model"] as? String ?? controls.model
+            controls.effort = effortOverride ?? result["reasoningEffort"] as? String ?? controls.effort
+            controls.mode = modeOverride ?? Self.mode(fromSandbox: result["sandbox"]) ?? controls.mode
+            refreshEffortLevels()
             if resumeID != nil { step.events = Self.history(thread) }
             if let threadID, !queued.isEmpty {
                 step.replies.append(turnStart(threadID, queued.joined(separator: "\n\n")))
@@ -205,6 +331,14 @@ public struct CodexChatProtocol: ChatProtocol {
         default:
             return ChatStep()
         }
+    }
+
+    /// `model/list` 里的一项。隐藏的模型不进菜单。
+    static func model(_ item: [String: Any]) -> ModelOption? {
+        guard item["hidden"] as? Bool != true, let value = (item["model"] ?? item["id"]) as? String else { return nil }
+        let efforts = (item["supportedReasoningEfforts"] as? [[String: Any]] ?? []).compactMap { $0["reasoningEffort"] as? String }
+        return ModelOption(value: value, displayName: item["displayName"] as? String ?? value,
+                           description: item["description"] as? String ?? "", effortLevels: efforts)
     }
 
     /// codex 的额度窗口按分钟给：300 是 5 小时，10080 是 7 天。
@@ -303,7 +437,15 @@ public struct CodexChatProtocol: ChatProtocol {
     }
 
     private mutating func turnStart(_ threadID: String, _ text: String) -> String {
-        request(nextID(), "turn/start", ["threadId": threadID, "input": [["type": "text", "text": text]]])
+        var params: [String: Any] = ["threadId": threadID, "input": [["type": "text", "text": text]]]
+        if let modelOverride { params["model"] = modelOverride }
+        if let effortOverride { params["effort"] = effortOverride }
+        if let modeOverride {
+            let policy = Self.policy(modeOverride)
+            params["approvalPolicy"] = policy.approval
+            params["sandboxPolicy"] = policy.sandbox
+        }
+        return request(nextID(), "turn/start", params)
     }
 
     private func request(_ id: Int, _ method: String, _ params: [String: Any]) -> String {
@@ -321,14 +463,65 @@ public struct CodexChatProtocol: ChatProtocol {
 /// 输出 `init`、每一步的 `step_update`（`step_type` 区分回复 / 工具）和每轮末尾的 `result`。
 ///
 /// print 模式下 agy 不发权限请求（按它自己的规则放行或拒绝），也没有打断的办法。
+/// 模型、强度、权限档位都只能用启动参数设（`--model` / `--effort` / `--mode`），
+/// 所以改任何一项都是 `.relaunch`：这一轮结束后带新参数、用 `--conversation` 重开。
 public struct AgyChatProtocol: ChatProtocol {
     public private(set) var conversationID: String?
     private var texts: [Int: String] = [:]
     private var tools: Set<Int> = []
+    public private(set) var controls = ChatControls()
 
-    public init() {}
+    public static let modes = ["default", "accept-edits", "plan"]
+    public static let effortLevels = ["low", "medium", "high", "max"]
+
+    public init(model: String? = nil, effort: String? = nil, mode: String? = nil) {
+        controls.modes = Self.modes
+        controls.effortLevels = Self.effortLevels
+        controls.model = model
+        controls.effort = effort
+        controls.mode = mode ?? "default"
+    }
 
     public var canInterrupt: Bool { false }
+    public var externalID: String? { conversationID }
+
+    public mutating func setModel(_ value: String) -> ControlChange {
+        controls.model = value
+        return .relaunch
+    }
+
+    public mutating func setEffort(_ level: String) -> ControlChange {
+        controls.effort = level
+        return .relaunch
+    }
+
+    public mutating func setMode(_ id: String) -> ControlChange {
+        controls.mode = id
+        return .relaunch
+    }
+
+    /// `agy models` 的结果（没有机器可读格式，是「ID<TAB>名称」一行一个）。
+    public mutating func supply(models: [ModelOption]) {
+        controls.models = models
+    }
+
+    public static func parseModels(_ output: String) -> [ModelOption] {
+        output.split(separator: "\n").compactMap { line in
+            let columns = line.split(separator: "\t", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            guard columns.count == 2, !columns[0].isEmpty, !columns[0].contains(" ") else { return nil }
+            return ModelOption(value: columns[0], displayName: columns[1], description: "")
+        }
+    }
+
+    /// 启动参数。`--print` 必须带参数（空串）并放在最后：agy 会把紧跟在它后面的东西当提示词。
+    public static func launchArguments(resume: String?, model: String?, effort: String?, mode: String?) -> [String] {
+        var arguments = ["--input-format", "stream-json", "--output-format", "stream-json"]
+        if let model { arguments += ["--model", model] }
+        if let effort { arguments += ["--effort", effort] }
+        if let mode, mode != "default" { arguments += ["--mode", mode] }
+        if let resume { arguments += ["--conversation", resume] }
+        return arguments + ["--print", ""]
+    }
 
     public mutating func opening() -> [String] { [] }
 
