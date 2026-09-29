@@ -9,6 +9,9 @@ import SwiftUI
 struct ChatView: View {
     let session: LiveSession
     let chat: ChatBridge
+    @AppStorage("readingFont") private var readingFont = ReadingStyle.default.family
+    @AppStorage("readingSize") private var readingSize = ReadingStyle.default.size
+    @AppStorage("readingSpacing") private var readingSpacing = ReadingStyle.default.lineSpacing
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -41,6 +44,7 @@ struct ChatView: View {
             }
         }
         .background(SwiftUI.Color.coveBg)
+        .environment(\.readingStyle, ReadingStyle(family: readingFont, size: readingSize, lineSpacing: readingSpacing))
     }
 
     private static let bottom = "bottom"
@@ -61,6 +65,7 @@ private struct ChatRow: View {
     let item: ChatItem
     let session: LiveSession
     let chat: ChatBridge
+    @Environment(\.readingStyle) private var style
 
     var body: some View {
         switch item.kind {
@@ -68,8 +73,8 @@ private struct ChatRow: View {
             HStack {
                 Spacer(minLength: 80)
                 Text(text)
-                    .font(CoveFont.ui(14))
-                    .lineSpacing(5)
+                    .font(style.font(scale: 0.97))
+                    .lineSpacing(style.lineSpacing * 0.7)
                     .foregroundStyle(SwiftUI.Color.coveT1)
                     .textSelection(.enabled)
                     .padding(.horizontal, 14)
@@ -268,148 +273,5 @@ private struct EmptyChat: View {
                 .foregroundStyle(SwiftUI.Color.coveT3)
         }
         .allowsHitTesting(false)
-    }
-}
-
-/// 正在流式输出的回复：新到的字从模糊渐变到清晰（`BlurInRenderer`），已落定的照常排版。
-///
-/// 做法：最后 `BlurIn.duration` 秒内到达的那几批字是「新字」，只要它们都落在最后一个块的
-/// 末尾，这个块就拆成「旧字 + 新字」两段 Text 拼接，新字挂上到达时间，由渲染器按时间
-/// 画出模糊和透明度。新字跨了块边界（比如刚好到了空行）就这一帧不做效果，不影响排版。
-private struct StreamingReply: View {
-    let draft: String
-    let chunks: [ChatBridge.DraftChunk]
-
-    var body: some View {
-        if #available(macOS 15, *) {
-            TimelineView(.animation) { context in
-                MarkdownText(text: draft, fresh: fresh(at: context.date))
-                    .textRenderer(BlurInRenderer(now: context.date))
-            }
-        } else {
-            MarkdownText(text: draft)
-        }
-    }
-
-    /// 还在渐显中的那几批字，拆成单个字、到达时间逐字错开，一批字从左到右依次浮现，
-    /// 而不是整块同时出现。错开的总时长有上限，大段文字一次到达时也不会拖太久。
-    private func fresh(at now: Date) -> [ChatBridge.DraftChunk] {
-        let window = BlurIn.duration + BlurIn.maxStagger
-        let recent = chunks.reversed().prefix { now.timeIntervalSince($0.arrived) < window }.reversed()
-        return recent.flatMap { chunk -> [ChatBridge.DraftChunk] in
-            let characters = Array(chunk.text)
-            let step = min(BlurIn.perCharacter, BlurIn.maxStagger / Double(max(characters.count, 1)))
-            return characters.enumerated().map { index, character in
-                ChatBridge.DraftChunk(text: String(character), arrived: chunk.arrived.addingTimeInterval(Double(index) * step))
-            }
-        }
-    }
-}
-
-enum BlurIn {
-    static let duration: TimeInterval = 0.6
-    static let radius: CGFloat = 6
-    /// 同一批字之间逐字错开的间隔，以及一批字错开的总上限。
-    static let perCharacter: TimeInterval = 0.025
-    static let maxStagger: TimeInterval = 0.35
-}
-
-@available(macOS 15, *)
-private struct ArrivalAttribute: TextAttribute {
-    let arrived: Date
-}
-
-@available(macOS 15, *)
-private struct BlurInRenderer: TextRenderer {
-    let now: Date
-
-    func draw(layout: Text.Layout, in context: inout GraphicsContext) {
-        for line in layout {
-            for run in line {
-                guard let arrival = run[ArrivalAttribute.self] else {
-                    context.draw(run)
-                    continue
-                }
-                let progress = min(max(now.timeIntervalSince(arrival.arrived) / BlurIn.duration, 0), 1)
-                let eased = 1 - pow(1 - progress, 3)
-                var copy = context
-                copy.opacity = eased
-                if eased < 1 { copy.addFilter(.blur(radius: (1 - eased) * BlurIn.radius)) }
-                copy.draw(run)
-            }
-        }
-    }
-}
-
-/// 回复正文：块级结构由 `MarkdownBlocks` 切，行内语法交给系统 Markdown。
-struct MarkdownText: View {
-    let text: String
-    /// 流式输出时刚到的几批字，按顺序排在 `text` 末尾；为空就是普通的静态正文。
-    var fresh: [ChatBridge.DraftChunk] = []
-
-    var body: some View {
-        let blocks = MarkdownBlocks.split(text)
-        VStack(alignment: .leading, spacing: 14) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                switch block {
-                case let .paragraph(body) where index == blocks.count - 1 && !fresh.isEmpty:
-                    fading(body, inline: true)
-                        .font(CoveFont.ui(14.5))
-                        .lineSpacing(7)
-                        .foregroundStyle(SwiftUI.Color.coveBody)
-                case let .paragraph(body):
-                    Text(Self.inline(body))
-                        .font(CoveFont.ui(14.5))
-                        .lineSpacing(7)
-                        .foregroundStyle(SwiftUI.Color.coveBody)
-                case let .heading(body):
-                    Text(Self.inline(body))
-                        .font(CoveFont.ui(15.5, weight: .semibold))
-                        .foregroundStyle(SwiftUI.Color.coveT1)
-                        .padding(.top, 6)
-                case let .code(_, body):
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        (index == blocks.count - 1 && !fresh.isEmpty ? fading(body, inline: false) : Text(body))
-                            .font(CoveFont.mono(12.5))
-                            .foregroundStyle(SwiftUI.Color.coveT1)
-                            .padding(12)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(SwiftUI.Color.coveKey, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-            }
-        }
-        // 可选中的文字在 macOS 上换成另一套控件绘制，会绕过 `BlurInRenderer`，渐显就没了。
-        // 流式中的那段本来只存在一瞬间，先不让选；落定成正式回复后照常可选。
-        .modifier(SelectableIf(fresh.isEmpty))
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// 把块拆成「旧字 + 各批新字」拼接的 Text。新字不在块尾时整块按旧字处理。
-    private func fading(_ body: String, inline: Bool) -> Text {
-        let tail = fresh.map(\.text).joined()
-        guard #available(macOS 15, *), !tail.isEmpty, body.hasSuffix(tail) else {
-            return inline ? Text(Self.inline(body)) : Text(body)
-        }
-        let settled = String(body.dropLast(tail.count))
-        // 新字只存在零点几秒，按纯文本显示；落定后并进旧字，行内 Markdown 才生效。
-        var result = inline ? Text(Self.inline(settled)) : Text(settled)
-        for chunk in fresh {
-            result = result + Text(chunk.text).customAttribute(ArrivalAttribute(arrived: chunk.arrived))
-        }
-        return result
-    }
-
-    static func inline(_ text: String) -> AttributedString {
-        InlineMarkdown.attributed(text)
-    }
-}
-
-private struct SelectableIf: ViewModifier {
-    let enabled: Bool
-    init(_ enabled: Bool) { self.enabled = enabled }
-
-    func body(content: Content) -> some View {
-        if enabled { content.textSelection(.enabled) } else { content }
     }
 }

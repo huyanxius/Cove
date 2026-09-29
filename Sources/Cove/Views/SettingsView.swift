@@ -6,6 +6,7 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             GeneralSettings().tabItem { Label("通用", systemImage: "gearshape") }
+            ReadingSettings().tabItem { Label("阅读", systemImage: "textformat") }
             PetSettings().tabItem { Label("小螃蟹", systemImage: "pawprint") }
             ShortcutSettings().tabItem { Label("快捷键", systemImage: "keyboard") }
             AboutSettings().tabItem { Label("关于", systemImage: "info.circle") }
@@ -19,6 +20,7 @@ private struct GeneralSettings: View {
     @AppStorage("defaultCLI") private var defaultCLI = CLIKind.claude.rawValue
     @AppStorage("showUsage") private var showUsage = true
     @AppStorage("backupTranscripts") private var backupTranscripts = true
+    @AppStorage("allowBypassPermissions") private var allowBypass = false
     @AppStorage("showPet") private var showPet = true
     @AppStorage("interfaceMode") private var interfaceMode = InterfaceMode.composer
     @AppStorage("onboarded") private var onboarded = true
@@ -41,6 +43,10 @@ private struct GeneralSettings: View {
             Text(interfaceMode.detail + (interfaceMode == .cove ? "切换会让空闲的 Claude 会话按原 ID 重开，对话不会丢。" : ""))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Toggle("允许跳过权限模式", isOn: $allowBypass)
+            Text("打开后，Cove 界面的权限菜单里可以选「跳过权限」（claude 不再询问任何操作）。只是允许选，不会默认开启；对之后新开或重开的会话生效。")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Toggle("备份会话记录", isOn: $backupTranscripts)
             Text("claude 默认会删掉 30 天前的会话记录。开着时 Cove 每 5 分钟镜像一份，被删的会话仍列在侧栏、点开即恢复。APFS 上是文件克隆，原件还在时几乎不占空间。")
                 .font(.caption).foregroundStyle(.secondary)
@@ -59,6 +65,54 @@ private struct GeneralSettings: View {
             }
             LabeledContent("新手引导") {
                 Button("重新显示") { onboarded = false }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// Cove 界面里对话正文的字体、字号、行距。下面的预览用的就是对话里那套渲染。
+private struct ReadingSettings: View {
+    @AppStorage("readingFont") private var family = ReadingStyle.default.family
+    @AppStorage("readingSize") private var size = ReadingStyle.default.size
+    @AppStorage("readingSpacing") private var spacing = ReadingStyle.default.lineSpacing
+
+    private static let sample = """
+    ## 预览
+    这是一段**示例回复**，用来看字体、字号和行距的效果。Cove 会把 `代码`、列表和表格一起排好。
+    - 第一条要点
+    - [x] 已完成的任务
+    """
+
+    var body: some View {
+        Form {
+            Picker("字体", selection: $family) {
+                ForEach(ReadingStyle.families, id: \.id) { Text($0.title).tag($0.id) }
+            }
+            LabeledContent("字号") {
+                HStack {
+                    Slider(value: $size, in: 12...20, step: 0.5)
+                    Text(String(format: "%.1f", size)).monospacedDigit().frame(width: 36)
+                }
+            }
+            LabeledContent("行距") {
+                HStack {
+                    Slider(value: $spacing, in: 2...14, step: 1)
+                    Text("\(Int(spacing))").monospacedDigit().frame(width: 36)
+                }
+            }
+            Section {
+                MarkdownText(text: Self.sample)
+                    .environment(\.readingStyle, ReadingStyle(family: family, size: size, lineSpacing: spacing))
+                    .padding(.vertical, 6)
+            }
+            HStack {
+                Spacer()
+                Button("恢复默认") {
+                    family = ReadingStyle.default.family
+                    size = ReadingStyle.default.size
+                    spacing = ReadingStyle.default.lineSpacing
+                }
             }
         }
         .formStyle(.grouped)
