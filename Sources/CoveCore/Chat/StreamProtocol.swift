@@ -21,8 +21,10 @@ public enum StreamEvent: Equatable, Sendable {
     case commands([SlashCommand])
     /// 初始化应答里的会话信息：可选模型、当前权限模式。
     case sessionInfo(models: [ModelOption], permissionMode: String?)
-    /// `set_permission_mode` 生效后的模式。
+    /// `set_permission_mode` 生效后的模式（应答里一次，`system/status` 里再报一次）。
     case permissionMode(String)
+    /// 控制请求被拒绝，比如没开放跳过权限时切到 `bypassPermissions`。
+    case controlError(String)
     /// 5h / 7d 额度。只填 `UsageSnapshot` 里的额度字段。
     case usage(UsageSnapshot)
     /// 上下文占用：`tokens` 是最近一次请求送进模型的总量（输入 + 缓存读 + 缓存写），来自 assistant 行；
@@ -54,7 +56,11 @@ public enum StreamEvent: Equatable, Sendable {
         case "control_request":
             return PermissionRequest(object).map { [.permission($0)] } ?? []
         case "control_response":
-            let body = (object["response"] as? [String: Any])?["response"] as? [String: Any]
+            let response = object["response"] as? [String: Any]
+            if response?["subtype"] as? String == "error" {
+                return [.controlError(response?["error"] as? String ?? "请求被拒绝")]
+            }
+            let body = response?["response"] as? [String: Any]
             var events: [StreamEvent] = []
             if let list = commands(body?["commands"]) { events.append(.commands(list)) }
             if let models = body?["models"] as? [[String: Any]] {
@@ -66,6 +72,8 @@ public enum StreamEvent: Equatable, Sendable {
             return events
         case "system" where object["subtype"] as? String == "commands_changed":
             return commands(object["commands"]).map { [.commands($0)] } ?? []
+        case "system" where object["subtype"] as? String == "status":
+            return (object["permissionMode"] as? String).map { [.permissionMode($0)] } ?? []
         case "rate_limit_event":
             return usage(object["rate_limit_info"] as? [String: Any]).map { [.usage($0)] } ?? []
         case "result":
@@ -254,9 +262,11 @@ public enum StreamInput {
 extension ClaudeLaunch {
     /// Cove 界面模式的启动参数。`--permission-prompt-tool stdio` 让需要批准的工具调用变成
     /// stdout 上的 `can_use_tool` 请求；不加的话 `-p` 模式会直接拒绝。
-    public static func streamArguments(_ mode: Mode, settingsJSON: String? = nil) -> [String] {
+    /// `allowBypass` 只是允许会话中途切到「跳过权限」，不会默认跳过——不带它时 claude 拒绝这个切换。
+    public static func streamArguments(_ mode: Mode, settingsJSON: String? = nil, allowBypass: Bool = false) -> [String] {
         var arguments = ["-p", "--input-format", "stream-json", "--output-format", "stream-json",
                          "--verbose", "--include-partial-messages"]
+        if allowBypass { arguments.append("--allow-dangerously-skip-permissions") }
         if let settingsJSON { arguments += ["--settings", settingsJSON] }
         arguments += ["--permission-prompt-tool", "stdio"]
         switch mode {
