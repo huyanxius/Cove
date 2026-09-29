@@ -170,17 +170,22 @@ public struct ModelOption: Equatable, Sendable, Identifiable {
     public let value: String
     public let displayName: String
     public let description: String
+    /// 这个模型支持的思考强度档位，从低到高（`low` … `max`）；不支持调强度的模型为空。
+    public let effortLevels: [String]
 
-    public init(value: String, displayName: String, description: String) {
+    public init(value: String, displayName: String, description: String, effortLevels: [String] = []) {
         self.value = value
         self.displayName = displayName
         self.description = description
+        self.effortLevels = effortLevels
     }
 
     init?(_ object: [String: Any]) {
         guard let value = object["value"] as? String else { return nil }
+        let supports = object["supportsEffort"] as? Bool ?? false
         self.init(value: value, displayName: object["displayName"] as? String ?? value,
-                  description: object["description"] as? String ?? "")
+                  description: object["description"] as? String ?? "",
+                  effortLevels: supports ? object["supportedEffortLevels"] as? [String] ?? [] : [])
     }
 }
 
@@ -234,6 +239,13 @@ public enum StreamInput {
 
     public static func setModel(_ value: String, requestID: String) -> String {
         line(["type": "control_request", "request_id": requestID, "request": ["subtype": "set_model", "model": value]])
+    }
+
+    /// 会话中途改思考强度。`effortLevel` 就是 `--effort` 背后的设置键，`apply_flag_settings`
+    /// 改的正是命令行参数那一层，所以效果等同于用 `--effort` 重新启动，但不打断会话。
+    public static func setEffort(_ level: String, requestID: String) -> String {
+        line(["type": "control_request", "request_id": requestID,
+              "request": ["subtype": "apply_flag_settings", "settings": ["effortLevel": level]]])
     }
 
     /// 相当于终端里按 Esc：打断当前这一轮。
