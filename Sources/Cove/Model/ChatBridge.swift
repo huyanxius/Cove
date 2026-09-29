@@ -27,6 +27,10 @@ final class ChatBridge {
     private(set) var needsRelaunch = false
     /// 启动时是否带了 `--allow-dangerously-skip-permissions`；没带就不能切到跳过权限（claude）。
     private(set) var bypassAllowed = false
+    /// 按过一次 Esc、正在等第二次（见 `escapePressed()`）。
+    private(set) var escapeArmed = false
+    /// 有操作在等批准时发出的消息：先压着，批准或拒绝之后再发。
+    private(set) var heldMessages: [String] = []
 
     struct DraftChunk {
         let text: String
@@ -48,6 +52,8 @@ final class ChatBridge {
 
     let cli: CLIKind
     @ObservationIgnored private var proto: any ChatProtocol
+    /// 原始往来的日志，`start` 时按会话 ID 建。
+    @ObservationIgnored var protocolLog: ProtocolLog?
 
     init(cli: CLIKind, protocol proto: any ChatProtocol) {
         self.cli = cli
@@ -71,13 +77,17 @@ final class ChatBridge {
         process.standardOutput = stdout
         process.standardError = stderr
 
+        let log = protocolLog
+        log?.record(.note, "启动 \(program) \(arguments.joined(separator: " "))")
         let reader = LineReader { [weak self] raw in
             guard let line = JSONLine.payload(raw) else { return }
+            log?.record(.received, line)
             DispatchQueue.main.async { self?.receive(line) }
         }
         stdout.fileHandleForReading.readabilityHandler = { handle in reader.feed(handle.availableData) }
         stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let text = String(decoding: handle.availableData, as: UTF8.self)
+            if !text.isEmpty { log?.record(.stderr, text) }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.errorTail = String((self.errorTail + text).suffix(600))
@@ -113,13 +123,36 @@ final class ChatBridge {
 
     func send(_ text: String) {
         guard isRunning else { return }
+        // 等批准的时候插进一条新消息，容易让人忘了上面还卡着一个操作；先压着，选完再发。
+        if log.pendingPermission != nil {
+            heldMessages.append(text)
+            return
+        }
         log.addPrompt(text)
         for line in proto.send(text) { write(line) }
     }
 
     func answer(_ request: PermissionRequest, allow: Bool) {
         log.answer(request.requestID, allowed: allow)
+        protocolLog?.record(.note, "权限\(allow ? "允许" : "拒绝")：\(request.toolName) \(request.summary)")
         for line in proto.answer(request, allow: allow) { write(line) }
+        guard log.pendingPermission == nil, !heldMessages.isEmpty else { return }
+        let held = heldMessages
+        heldMessages = []
+        send(held.joined(separator: "\n\n"))
+    }
+
+    /// 输入框里按 Esc：连按两下（1.2 秒内）才停止。单按一下太容易误触——关输入法候选、
+    /// 关弹出菜单都会顺手按 Esc。
+    func escapePressed() {
+        guard log.isWorking, canInterrupt else { return }
+        if escapeArmed {
+            escapeArmed = false
+            interrupt(source: "Esc 连按两次")
+            return
+        }
+        escapeArmed = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.escapeArmed = false }
     }
 
     func setModel(_ value: String) { apply(proto.setModel(value), note: "模型") }
@@ -148,8 +181,10 @@ final class ChatBridge {
         ChatPreferences.save(cli, controls)
     }
 
-    func interrupt() {
+    /// `source` 记进协议日志：下次出现「不知道谁停的」时一查就知道。
+    func interrupt(source: String) {
         guard log.isWorking else { return }
+        protocolLog?.record(.note, "中断，来源：\(source)")
         for line in proto.interrupt() { write(line) }
     }
 
@@ -202,6 +237,7 @@ final class ChatBridge {
     }
 
     private func didExit(_ status: Int32) {
+        protocolLog?.record(.note, "进程退出，状态 \(status)")
         isRunning = false
         input = nil
         if status != 0, !errorTail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -212,6 +248,7 @@ final class ChatBridge {
     }
 
     private func write(_ line: String) {
+        protocolLog?.record(.sent, line)
         // 进程已经没了时写管道会触发 SIGPIPE；Cove 启动时已忽略它，这里只需吞掉错误。
         try? input?.write(contentsOf: Data(line.utf8))
     }

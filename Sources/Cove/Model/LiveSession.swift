@@ -163,6 +163,7 @@ final class LiveSession: Identifiable {
             var environment = ProcessInfo.processInfo.environment
             environment["COVE_SESSION_ID"] = self.id
             let (program, arguments) = self.chatCommand(resumeID: resumeID)
+            chat.protocolLog = ProtocolLog(cli: cli, sessionID: self.id)
             if chat.start(shell: Self.loginShell(), program: program, arguments: arguments,
                           cwd: self.launchDirectory, environment: environment) {
                 self.hasOutput = true
@@ -232,7 +233,7 @@ final class LiveSession: Identifiable {
     func sendRaw(_ bytes: [UInt8]) {
         guard let chat else { return terminal.send(bytes) }
         // Cove 界面里没有终端，唯一有意义的透传键是 Esc：打断这一轮。
-        if bytes == [0x1B] { chat.interrupt() }
+        if bytes == [0x1B] { chat.escapePressed() }
     }
 
     /// 把键盘交给 CLI 自己的输入框：先写入触发的字符，再让终端成为第一响应者。

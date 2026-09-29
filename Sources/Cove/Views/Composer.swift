@@ -17,6 +17,10 @@ struct Composer: View {
     var body: some View {
         @Bindable var session = session
         VStack(alignment: .leading, spacing: 10) {
+            if let chat = session.chat, let request = chat.log.pendingPermission {
+                PendingApprovalBar(request: request, agent: session.cli == .claude ? "Claude" : session.cli.displayName,
+                                   held: chat.heldMessages.count) { allow in chat.answer(request, allow: allow) }
+            }
             if !suggestions.isEmpty {
                 SlashSuggestions(commands: suggestions, selected: selectedIndex) { pick($0) }
             }
@@ -54,9 +58,14 @@ struct Composer: View {
                 }
                 // 只有输入框为空时按键才会交给 CLI，所以提示也只在那时出现。
                 if let chat = session.chat {
-                    if chat.log.isWorking, chat.canInterrupt {
+                    if chat.escapeArmed {
+                        Text("再按一次").foregroundStyle(SwiftUI.Color.coveAttn)
                         KeyCap(text: "esc")
-                        Text("打断")
+                        Text("停止").foregroundStyle(SwiftUI.Color.coveAttn)
+                    } else if chat.log.isWorking, chat.canInterrupt {
+                        KeyCap(text: "esc")
+                        KeyCap(text: "esc")
+                        Text("停止")
                     } else if session.draft.isEmpty && session.isRunning && !chat.commands.isEmpty {
                         KeyCap(text: "/")
                         Text("命令与技能")
@@ -138,20 +147,25 @@ struct Composer: View {
 
     @ViewBuilder
     private var sendButton: some View {
-        // Cove 界面里 Claude 在干活、输入框又是空的：按钮换成停止。有字时仍是发送——
-        // stream-json 允许中途插话，claude 会在当前动作结束后读到。
-        if let chat = session.chat, chat.canInterrupt, chat.log.isWorking, session.draft.isEmpty {
-            Button(action: { chat.interrupt() }) {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(SwiftUI.Color.coveAccentFill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        // 干活时停止按钮单独出现在发送键左边，发送键不变形：原来两者共用一个位置，
+        // 想点发送（或只是点回输入框）时容易误点成停止。
+        HStack(spacing: 6) {
+            if let chat = session.chat, chat.canInterrupt, chat.log.isWorking {
+                Button(action: { chat.interrupt(source: "停止按钮") }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "stop.fill").font(.system(size: 8.5, weight: .bold))
+                        Text("停止").font(CoveFont.ui(11.5, weight: .medium))
+                    }
+                    .foregroundStyle(SwiftUI.Color.coveT1)
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .background(SwiftUI.Color.coveKey, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(SwiftUI.Color.coveRaisedLine))
+                }
+                .buttonStyle(.plain)
+                .help("停止这一轮（或连按两次 Esc）")
+                .accessibilityLabel("Stop")
             }
-            .buttonStyle(.plain)
-            .help("停止（Esc）")
-            .accessibilityLabel("Stop")
-        } else {
             plainSendButton
         }
     }
@@ -544,5 +558,47 @@ enum ModeCatalog {
         guard !cycle.isEmpty else { return nil }
         let index = current.flatMap { cycle.firstIndex(of: $0) } ?? -1
         return cycle[(index + 1) % cycle.count]
+    }
+}
+
+/// 有操作在等批准时贴在输入框上方的一条：不用滚回对话里找卡片，在这里就能选。
+/// 这期间发出的消息先压着（`ChatBridge.heldMessages`），选完自动发出。
+private struct PendingApprovalBar: View {
+    let request: PermissionRequest
+    let agent: String
+    let held: Int
+    let decide: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Rectangle().fill(SwiftUI.Color.coveAttn).frame(width: 6, height: 6)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(agent) 在等你批准：\(summary)")
+                    .font(CoveFont.ui(12, weight: .medium))
+                    .foregroundStyle(SwiftUI.Color.coveT1)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if held > 0 {
+                    Text("你刚发的消息会在选择之后发出")
+                        .font(CoveFont.ui(11))
+                        .foregroundStyle(SwiftUI.Color.coveT3)
+                }
+            }
+            Spacer(minLength: 8)
+            Button("拒绝") { decide(false) }
+            Button("允许") { decide(true) }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return, modifiers: [.command])
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(SwiftUI.Color.coveAttn.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(SwiftUI.Color.coveAttn.opacity(0.4)))
+    }
+
+    private var summary: String {
+        let input = request.input
+        return input["command"] ?? input["file_path"] ?? input["url"] ?? (request.summary.isEmpty ? request.toolName : request.summary)
     }
 }
