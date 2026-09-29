@@ -50,6 +50,27 @@ public struct UsageSnapshot: Equatable, Sendable {
         return usage
     }
 
+    /// claude 有时推来不带 rate_limits 的快照（比如刚重绘、还没收到 API 响应头），
+    /// 用新值覆盖旧值，但缺失的字段沿用上一次的读数，圆环不会闪回「—」。
+    public func merged(over previous: UsageSnapshot?) -> UsageSnapshot {
+        guard let previous else { return self }
+        var m = self
+        m.modelID = modelID ?? previous.modelID
+        m.modelName = modelName ?? previous.modelName
+        m.contextPercent = contextPercent ?? previous.contextPercent
+        m.fiveHourPercent = fiveHourPercent ?? previous.fiveHourPercent
+        m.fiveHourResetsAt = fiveHourResetsAt ?? previous.fiveHourResetsAt
+        m.sevenDayPercent = sevenDayPercent ?? previous.sevenDayPercent
+        m.sevenDayResetsAt = sevenDayResetsAt ?? previous.sevenDayResetsAt
+        m.inputTokens = inputTokens ?? previous.inputTokens
+        m.outputTokens = outputTokens ?? previous.outputTokens
+        m.cacheReadTokens = cacheReadTokens ?? previous.cacheReadTokens
+        m.cacheWriteTokens = cacheWriteTokens ?? previous.cacheWriteTokens
+        m.reportedCostUSD = reportedCostUSD ?? previous.reportedCostUSD
+        m.apiDuration = apiDuration ?? previous.apiDuration
+        return m
+    }
+
     private static func number(_ value: Any?) -> Double? {
         if let n = value as? NSNumber { return n.doubleValue }
         if let s = value as? String { return Double(s) }

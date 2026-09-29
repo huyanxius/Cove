@@ -40,6 +40,33 @@ enum UsageRelay {
         return status["command"] as? String
     }
 
+    /// 账号级的 5h / 7d 额度：取所有会话里最近一次报过的值。刚重开、还没发请求的会话
+    /// 拿不到这两项，就用它补；已经过了重置时间的读数作废。
+    static func latestAccountLimits(now: Date = .now) -> UsageSnapshot? {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: usageDirectory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return nil }
+        let sorted = files.sorted {
+            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return a > b
+        }
+        for file in sorted.prefix(20) {
+            guard let data = try? Data(contentsOf: file), let snapshot = UsageSnapshot.parse(data),
+                  snapshot.fiveHourPercent != nil || snapshot.sevenDayPercent != nil else { continue }
+            var limits = UsageSnapshot()
+            if (snapshot.fiveHourResetsAt ?? .distantFuture) > now {
+                limits.fiveHourPercent = snapshot.fiveHourPercent
+                limits.fiveHourResetsAt = snapshot.fiveHourResetsAt
+            }
+            if (snapshot.sevenDayResetsAt ?? .distantFuture) > now {
+                limits.sevenDayPercent = snapshot.sevenDayPercent
+                limits.sevenDayResetsAt = snapshot.sevenDayResetsAt
+            }
+            return limits
+        }
+        return nil
+    }
+
     static func snapshot(for sessionID: String) -> UsageSnapshot? {
         guard let data = try? Data(contentsOf: usageDirectory.appendingPathComponent("\(sessionID).json")) else { return nil }
         return UsageSnapshot.parse(data)
