@@ -327,9 +327,10 @@ import Testing
 }
 
 @Suite struct InterfaceModeTests {
-    @Test func onlyClaudeGetsTheChatSurface() {
+    @Test func everyCLIGetsTheChatSurface() {
         #expect(InterfaceMode.cove.surface(for: .claude) == .chat)
-        #expect(InterfaceMode.cove.surface(for: .codex) == .terminal)
+        #expect(InterfaceMode.cove.surface(for: .codex) == .chat)
+        #expect(InterfaceMode.cove.surface(for: .agy) == .chat)
         #expect(InterfaceMode.composer.surface(for: .claude) == .terminal)
     }
 
@@ -404,5 +405,132 @@ import Testing
         // 一次到了 500 个字：不能按 20ms 一个排到 10 秒之后。
         let times = RevealTimeline.reveal(batches: [(count: 500, arrived: 0)])
         #expect(times.last! < 2.5)
+    }
+}
+
+/// 样本取自 codex-cli 0.158.0-alpha.2.1 `codex app-server` 的真实输出，删掉了无关字段。
+@Suite struct CodexProtocolTests {
+    func object(_ line: String) throws -> [String: Any] {
+        try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+    }
+
+    @Test func handshakeThenStartsAThreadAndFlushesQueuedMessages() throws {
+        var codex = CodexChatProtocol(cwd: "/p", resume: nil)
+        let hello = try object(codex.opening()[0])
+        #expect(hello["method"] as? String == "initialize")
+        #expect(codex.send("先排队").isEmpty)
+
+        let afterInit = codex.receive(#"{"id":1,"result":{"userAgent":"x"}}"#).replies
+        #expect(try object(afterInit[0])["method"] as? String == "initialized")
+        let start = try object(afterInit[1])
+        #expect(start["method"] as? String == "thread/start")
+        #expect((start["params"] as? [String: Any])?["cwd"] as? String == "/p")
+
+        let ready = codex.receive(#"{"id":2,"result":{"thread":{"id":"t1","turns":[]}}}"#)
+        #expect(codex.threadID == "t1")
+        let turn = try object(ready.replies[0])
+        #expect(turn["method"] as? String == "turn/start")
+        let input = (turn["params"] as? [String: Any])?["input"] as? [[String: Any]]
+        #expect(input?.first?["text"] as? String == "先排队")
+    }
+
+    @Test func mapsStreamingItemsAndTurnEnd() {
+        var codex = CodexChatProtocol(cwd: "/p", resume: nil)
+        let delta = #"{"method":"item/agentMessage/delta","params":{"itemId":"m1","delta":"I"}}"#
+        #expect(codex.receive(delta).events == [.blockStart(.text), .textDelta("I")])
+        #expect(codex.receive(delta).events == [.textDelta("I")])
+
+        let started = #"{"method":"item/started","params":{"item":{"type":"commandExecution","id":"c1","command":"touch x","status":"inProgress"}}}"#
+        guard case let .transcript(.assistant(.toolUse(id, name, input), _, _)) = codex.receive(started).events.first else {
+            Issue.record("expected tool use"); return
+        }
+        #expect(id == "c1" && name == "Bash" && input["command"] == "touch x")
+        let done = #"{"method":"item/completed","params":{"item":{"type":"commandExecution","id":"c1","status":"completed","exitCode":1}}}"#
+        #expect(codex.receive(done).events == [.transcript(.toolResult(toolUseID: "c1", isError: true, taskID: nil, timestamp: nil))])
+
+        let message = #"{"method":"item/completed","params":{"item":{"type":"agentMessage","id":"m1","text":"done"}}}"#
+        #expect(codex.receive(message).events == [.transcript(.assistant(.text("done"), stopReason: nil, timestamp: nil))])
+        let end = #"{"method":"turn/completed","params":{"turn":{"id":"u1","status":"completed","error":null,"durationMs":46764}}}"#
+        #expect(codex.receive(end).events == [.turnFinished(error: nil, costUSD: nil, apiDuration: 46.764)])
+    }
+
+    @Test func approvalsRoundTripWithTheOriginalID() throws {
+        var codex = CodexChatProtocol(cwd: "/p", resume: nil)
+        let ask = #"{"id":7,"method":"item/commandExecution/requestApproval","params":{"itemId":"c1","command":"rm -rf build","reason":"清理构建目录","threadId":"t","turnId":"u","startedAtMs":1}}"#
+        guard case let .permission(request) = codex.receive(ask).events.first else { Issue.record("expected permission"); return }
+        #expect(request.input["command"] == "rm -rf build")
+        #expect(request.summary == "清理构建目录")
+        let reply = try object(codex.answer(request, allow: false)[0])
+        #expect(reply["id"] as? Int == 7)
+        #expect((reply["result"] as? [String: Any])?["decision"] as? String == "decline")
+        #expect(codex.answer(request, allow: true).isEmpty)
+    }
+
+    @Test func unsupportedServerRequestsAreRejectedNotIgnored() throws {
+        var codex = CodexChatProtocol(cwd: "/p", resume: nil)
+        let step = codex.receive(#"{"id":"abc","method":"item/tool/requestUserInput","params":{}}"#)
+        #expect(try object(step.replies[0])["id"] as? String == "abc")
+        #expect(step.events.count == 1)
+    }
+
+    @Test func usageAndLimits() {
+        var codex = CodexChatProtocol(cwd: "/p", resume: nil)
+        let tokens = #"{"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"last":{"inputTokens":29611},"modelContextWindow":258400}}}"#
+        #expect(codex.receive(tokens).events == [.context(tokens: 29611, window: 258400)])
+        let limits = #"{"method":"account/rateLimits/updated","params":{"rateLimits":{"primary":{"usedPercent":10,"windowDurationMins":10080,"resetsAt":1791056965},"secondary":null}}}"#
+        guard case let .usage(usage) = codex.receive(limits).events.first else { Issue.record("expected usage"); return }
+        #expect(usage.sevenDayPercent == 10 && usage.fiveHourPercent == nil)
+    }
+
+    @Test func resumeRequestsTheThreadAndReplaysHistory() throws {
+        var codex = CodexChatProtocol(cwd: "/p", resume: "t9")
+        _ = codex.opening()
+        let resume = try object(codex.receive(#"{"id":1,"result":{}}"#).replies[1])
+        #expect(resume["method"] as? String == "thread/resume")
+        let thread = #"{"id":2,"result":{"thread":{"id":"t9","turns":[{"id":"u","items":[{"type":"userMessage","id":"a","content":[{"type":"text","text":"你好"}]},{"type":"agentMessage","id":"b","text":"在的"}]}]}}}"#
+        let history = codex.receive(thread).events
+        #expect(history.first == .transcript(.humanPrompt(text: "你好", timestamp: nil, cwd: nil, gitBranch: nil)))
+        #expect(history.contains(.transcript(.assistant(.text("在的"), stopReason: nil, timestamp: nil))))
+        #expect(history.last == .turnFinished(error: nil, costUSD: nil, apiDuration: nil))
+    }
+}
+
+/// 样本取自 agy 1.2.13 `--input-format stream-json --output-format stream-json` 的真实输出。
+@Suite struct AgyProtocolTests {
+    @Test func encodesUserMessages() throws {
+        var agy = AgyChatProtocol()
+        let o = try #require(try JSONSerialization.jsonObject(with: Data(agy.send("hi")[0].utf8)) as? [String: Any])
+        #expect(o["event"] as? String == "user")
+        #expect((o["message"] as? [String: Any])?["content"] as? String == "hi")
+        #expect(!agy.canInterrupt)
+    }
+
+    @Test func mapsStepsAndResult() {
+        var agy = AgyChatProtocol()
+        _ = agy.receive(#"{"event":"init","conversation_id":"c1","init":{}}"#)
+        #expect(agy.conversationID == "c1")
+        #expect(agy.receive(#"{"event":"step_update","step_update":{"step_index":0,"state":"DONE","step_type":"user_input"}}"#).events.isEmpty)
+
+        let tool = #"{"event":"step_update","step_update":{"step_index":3,"state":"ACTIVE","step_type":"tool","tool_name":"view_file","tool_info":{"name":"view_file","parameters":{"AbsolutePath":"/p/MEMORY.md"}}}}"#
+        guard case let .transcript(.assistant(.toolUse(id, name, input), _, _)) = agy.receive(tool).events.first else {
+            Issue.record("expected tool"); return
+        }
+        #expect(id == "agy-3" && name == "Read" && input["file_path"] == "/p/MEMORY.md")
+        let toolDone = #"{"event":"step_update","step_update":{"step_index":3,"state":"DONE","step_type":"tool","tool_name":"view_file","tool_info":{"name":"view_file","parameters":{}}}}"#
+        #expect(agy.receive(toolDone).events == [.transcript(.toolResult(toolUseID: "agy-3", isError: false, taskID: nil, timestamp: nil))])
+
+        let delta = #"{"event":"step_update","step_update":{"step_index":4,"state":"ACTIVE","step_type":"agent_response","text_delta":"ok"}}"#
+        #expect(agy.receive(delta).events == [.blockStart(.text), .textDelta("ok")])
+        let last = #"{"event":"step_update","step_update":{"step_index":4,"state":"DONE","step_type":"agent_response","text_delta":"\n"}}"#
+        #expect(agy.receive(last).events == [.textDelta("\n"), .transcript(.assistant(.text("ok\n"), stopReason: nil, timestamp: nil))])
+
+        let result = #"{"event":"result","result":{"status":"SUCCESS","response":"ok\n","duration_seconds":29.4}}"#
+        #expect(agy.receive(result).events == [.turnFinished(error: nil, costUSD: nil, apiDuration: 29.4)])
+    }
+
+    @Test func thinkingOnlyStepsAddNothing() {
+        var agy = AgyChatProtocol()
+        let step = #"{"event":"step_update","step_update":{"step_index":2,"state":"DONE","step_type":"agent_response","usage":{"input_tokens":1}}}"#
+        #expect(agy.receive(step).events.isEmpty)
     }
 }
