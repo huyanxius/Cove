@@ -33,6 +33,12 @@ import Testing
         #expect(TranscriptEvent.parse(echo) == [.other])
     }
 
+    /// 实测 claude 2.1.284：技能正文在 JSONL 里标 `isMeta`，在 stream-json 里却只标 `isSynthetic`。
+    @Test func ignoresSyntheticSkillInjection() {
+        let skill = #"{"type":"user","isSynthetic":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /s"}]}}"#
+        #expect(TranscriptEvent.parse(skill) == [.other])
+    }
+
     @Test func parsesToolUse() {
         let line = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Edit","input":{"replace_all":false,"file_path":"/a/b.swift","old_string":"x","new_string":"y"}}],"stop_reason":"tool_use"}}"#
         #expect(TranscriptEvent.parse(line) == [
