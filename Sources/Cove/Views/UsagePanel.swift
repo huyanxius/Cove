@@ -5,15 +5,24 @@ import SwiftUI
 /// Claude 用 statusLine，Codex 用 app-server；数据未到时圆环显示空值。
 struct UsagePanel: View {
     let usage: UsageSnapshot?
-    /// 当前会话的 CLI；Antigravity 暂无用量来源。
+    /// 当前会话的 CLI；Antigravity 只有 Cove 界面下有 token，没有额度。
     var cli: CLIKind? = .claude
     var surface: Surface? = .chat
 
     var body: some View {
-        if cli == .agy || (cli == .codex && surface != .chat) {
+        if cli == .agy && surface == .chat {
+            // agy 每轮只报 token（下面小螃蟹那栏显示），不报额度和上下文窗口，所以不画圆环。
+            VStack(alignment: .leading, spacing: 6) {
+                modelLine
+                Text("Antigravity 不报告额度和上下文占用")
+                    .font(CoveFont.ui(11.5))
+                    .foregroundStyle(SwiftUI.Color.coveT3)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if cli == .agy || (cli == .codex && surface != .chat) {
             HStack(spacing: 6) {
                 Image(systemName: "gauge.with.dots.needle.0percent").font(.system(size: 11))
-                Text(cli == .codex ? "Codex 终端模式暂未接入用量" : "Antigravity 暂不提供用量数据")
+                Text("\(cli == .codex ? "Codex" : "Antigravity") 终端模式暂未接入用量")
                     .font(CoveFont.ui(11.5))
             }
             .foregroundStyle(SwiftUI.Color.coveT3)
@@ -32,14 +41,18 @@ struct UsagePanel: View {
                 Spacer(minLength: 4)
                 ring("上下文", usage?.contextPercent, resets: nil)
             }
-            HStack(spacing: 6) {
-                Image(systemName: "cpu").font(.system(size: 10))
-                Text(usage?.modelName ?? "等待 \(cli?.displayName ?? "CLI") 报告用量")
-                    .font(CoveFont.mono(11))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(SwiftUI.Color.coveT2)
+            modelLine
         }
+    }
+
+    private var modelLine: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "cpu").font(.system(size: 10))
+            Text(usage?.modelName ?? "等待 \(cli?.displayName ?? "CLI") 报告用量")
+                .font(CoveFont.mono(11))
+                .lineLimit(1)
+        }
+        .foregroundStyle(SwiftUI.Color.coveT2)
     }
 
     private func ring(_ label: String, _ percent: Double?, resets: Date?) -> some View {
