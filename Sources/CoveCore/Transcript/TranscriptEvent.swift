@@ -67,8 +67,9 @@ public enum TranscriptEvent: Equatable, Sendable {
             if !results.isEmpty { return results }
         }
 
-        // 走到这里的才可能是人类输入；子 agent（sidechain）和系统注入（meta）排除。
-        if object["isMeta"] as? Bool == true || object["isSidechain"] as? Bool == true { return [.other] }
+        // 走到这里的才可能是人类输入；子 agent（sidechain）和系统注入排除。同一条技能正文，
+        // JSONL 里标 `isMeta`，stream-json 里只标 `isSynthetic`，两个都要认。
+        if ["isMeta", "isSidechain", "isSynthetic"].contains(where: { object[$0] as? Bool == true }) { return [.other] }
         let text: String
         if let string = content as? String {
             text = string
