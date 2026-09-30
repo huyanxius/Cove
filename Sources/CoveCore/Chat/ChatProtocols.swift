@@ -490,7 +490,9 @@ public struct AgyChatProtocol: ChatProtocol {
     public private(set) var controls = ChatControls()
 
     public static let modes = ["default", "accept-edits", "plan"]
-    public static let effortLevels = ["low", "medium", "high", "max"]
+    /// `agy models` 回来之前先用这三档。`agy --help` 虽然写着 `low|medium|high|max`，但实测
+    /// 1.2.14 没有一个模型带 max：带 `--effort max` 启动会报 invalid model selection 并退出。
+    public static let effortLevels = ["low", "medium", "high"]
 
     public init(model: String? = nil, effort: String? = nil, mode: String? = nil) {
         controls.modes = Self.modes
@@ -498,6 +500,7 @@ public struct AgyChatProtocol: ChatProtocol {
         controls.model = model
         controls.effort = effort
         controls.mode = mode ?? "default"
+        dropUnsupportedEffort()
     }
 
     public var canInterrupt: Bool { false }
@@ -505,6 +508,7 @@ public struct AgyChatProtocol: ChatProtocol {
 
     public mutating func setModel(_ value: String) -> ControlChange {
         controls.model = value
+        refreshEffortLevels()
         return .relaunch
     }
 
@@ -521,13 +525,47 @@ public struct AgyChatProtocol: ChatProtocol {
     /// `agy models` 的结果（没有机器可读格式，是「ID<TAB>名称」一行一个）。
     public mutating func supply(models: [ModelOption]) {
         controls.models = models
+        refreshEffortLevels()
     }
 
+    /// 强度跟着模型走：没选模型时按 agy 的默认模型算（实测就是列表第一个 gemini-3.8-flash），
+    /// 不认识的模型 ID（比如旧版存下的 `gemini-3.1-pro-high`）保留三档不收窄。
+    private mutating func refreshEffortLevels() {
+        guard let current = controls.model.map({ id in controls.models.first { $0.value == id } }) ?? controls.models.first
+        else { return }
+        controls.effortLevels = current.effortLevels
+        dropUnsupportedEffort()
+    }
+
+    private mutating func dropUnsupportedEffort() {
+        if let effort = controls.effort, !controls.effortLevels.contains(effort) { controls.effort = nil }
+    }
+
+    /// 强度编在 ID 末尾：`gemini-3.8-flash-high` / `-medium` / `-low` 各占一行，名称带「(High)」。
+    /// 合并成一个模型 `gemini-3.8-flash`，档位按低到高排；启动时用 `--model 基础 ID --effort 档位`（实测可用）。
+    /// 没有档位后缀的（`claude-sonnet-4-6`）原样保留，不给强度。
     public static func parseModels(_ output: String) -> [ModelOption] {
-        output.split(separator: "\n").compactMap { line in
+        var order: [String] = []
+        var names: [String: String] = [:]
+        var levels: [String: Set<String>] = [:]
+        for line in output.split(separator: "\n") {
             let columns = line.split(separator: "\t", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-            guard columns.count == 2, !columns[0].isEmpty, !columns[0].contains(" ") else { return nil }
-            return ModelOption(value: columns[0], displayName: columns[1], description: "")
+            guard columns.count == 2, !columns[0].isEmpty, !columns[0].contains(" ") else { continue }
+            var id = columns[0], name = columns[1], level: String?
+            if let suffix = effortLevels.first(where: { id.hasSuffix("-\($0)") }) {
+                id.removeLast(suffix.count + 1)
+                name = name.replacingOccurrences(of: " (\(suffix.capitalized))", with: "")
+                level = suffix
+            }
+            if names[id] == nil {
+                order.append(id)
+                names[id] = name
+            }
+            if let level { levels[id, default: []].insert(level) }
+        }
+        return order.map { id in
+            ModelOption(value: id, displayName: names[id] ?? id, description: "",
+                        effortLevels: effortLevels.filter { levels[id]?.contains($0) == true })
         }
     }
 
