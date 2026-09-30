@@ -605,15 +605,45 @@ import Testing
     @Test func agyRelaunchesForEveryChangeAndBuildsArguments() {
         var agy = AgyChatProtocol(model: nil, effort: nil, mode: nil)
         #expect(agy.controls.mode == "default")
-        #expect(agy.setEffort("max") == .relaunch)
-        #expect(AgyChatProtocol.launchArguments(resume: "c1", model: "gemini-3.1-pro-high", effort: "max", mode: "plan")
-            == ["--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-3.1-pro-high",
-                "--effort", "max", "--mode", "plan", "--conversation", "c1", "--print", ""])
+        #expect(agy.setEffort("high") == .relaunch)
+        #expect(AgyChatProtocol.launchArguments(resume: "c1", model: "gemini-3.1-pro", effort: "high", mode: "plan")
+            == ["--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-3.1-pro",
+                "--effort", "high", "--mode", "plan", "--conversation", "c1", "--print", ""])
         #expect(AgyChatProtocol.launchArguments(resume: nil, model: nil, effort: nil, mode: "default").suffix(2) == ["--print", ""])
     }
 
-    @Test func parsesAgyModelList() {
-        let output = "Fetching available models...\ngemini-3.1-pro-high\tGemini 3.1 Pro (High)\nclaude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)\n"
-        #expect(AgyChatProtocol.parseModels(output).map(\.value) == ["gemini-3.1-pro-high", "claude-sonnet-4-6"])
+    /// agy 1.2.14 `agy models` 的真实输出形状：强度编在 ID 末尾，同一模型的几档各占一行。
+    static let agyModels = """
+        Fetching available models...
+        gemini-3.8-flash-high\tGemini 3.8 Flash (High)
+        gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)
+        gemini-3.8-flash-low\tGemini 3.8 Flash (Low)
+        gemini-3.1-pro-high\tGemini 3.1 Pro (High)
+        gemini-3.1-pro-low\tGemini 3.1 Pro (Low)
+        claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)
+        """
+
+    @Test func groupsAgyModelVariantsIntoEffortLevels() {
+        let models = AgyChatProtocol.parseModels(Self.agyModels)
+        #expect(models.map(\.value) == ["gemini-3.8-flash", "gemini-3.1-pro", "claude-sonnet-4-6"])
+        #expect(models.map(\.displayName) == ["Gemini 3.8 Flash", "Gemini 3.1 Pro", "Claude Sonnet 4.6 (Thinking)"])
+        #expect(models.map(\.effortLevels) == [["low", "medium", "high"], ["low", "high"], []])
+    }
+
+    /// 实测：agy 的默认模型 gemini-3.8-flash 没有 max，带 `--effort max` 启动直接报错退出，会话发不了消息。
+    @Test func agyDropsEffortTheModelDoesNotHave() {
+        #expect(AgyChatProtocol(effort: "max").controls.effort == nil)
+
+        var agy = AgyChatProtocol(effort: "medium")
+        agy.supply(models: AgyChatProtocol.parseModels(Self.agyModels))
+        #expect(agy.controls.effortLevels == ["low", "medium", "high"])
+        #expect(agy.controls.effort == "medium")
+
+        #expect(agy.setModel("gemini-3.1-pro") == .relaunch)
+        #expect(agy.controls.effortLevels == ["low", "high"])
+        #expect(agy.controls.effort == nil)
+
+        _ = agy.setModel("claude-sonnet-4-6")
+        #expect(agy.controls.effortLevels.isEmpty)
     }
 }
