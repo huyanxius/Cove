@@ -494,6 +494,9 @@ public struct AgyChatProtocol: ChatProtocol {
     /// 1.2.14 没有一个模型带 max：带 `--effort max` 启动会报 invalid model selection 并退出。
     public static let effortLevels = ["low", "medium", "high"]
 
+    /// 这一轮会话已经累计的 token（`result.usage` 逐轮加），重开进程从零算起。
+    private var tokens = UsageSnapshot()
+
     public init(model: String? = nil, effort: String? = nil, mode: String? = nil) {
         controls.modes = Self.modes
         controls.effortLevels = Self.effortLevels
@@ -603,8 +606,20 @@ public struct AgyChatProtocol: ChatProtocol {
         case "result":
             let result = object["result"] as? [String: Any] ?? [:]
             let failed = result["status"] as? String == "ERROR"
-            return ChatStep(events: [.turnFinished(error: failed ? (result["error"] as? String ?? "agy 出错了") : nil,
-                                                   costUSD: nil, apiDuration: result["duration_seconds"] as? Double)])
+            var events: [StreamEvent] = []
+            if let usage = result["usage"] as? [String: Any] {
+                func add(_ total: Int?, _ key: String) -> Int { (total ?? 0) + (usage[key] as? Int ?? 0) }
+                tokens.inputTokens = add(tokens.inputTokens, "input_tokens")
+                tokens.outputTokens = add(tokens.outputTokens, "output_tokens")
+                tokens.cacheReadTokens = add(tokens.cacheReadTokens, "cache_read_tokens")
+                // agy 不在输出里报模型名，用界面上选中的（没选就是默认的第一个）。
+                tokens.modelName = (controls.model.flatMap { id in controls.models.first { $0.value == id } }
+                    ?? controls.models.first)?.displayName ?? controls.model
+                events.append(.usage(tokens))
+            }
+            events.append(.turnFinished(error: failed ? (result["error"] as? String ?? "agy 出错了") : nil,
+                                        costUSD: nil, apiDuration: result["duration_seconds"] as? Double))
+            return ChatStep(events: events)
         default:
             return ChatStep()
         }
