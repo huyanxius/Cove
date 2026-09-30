@@ -165,6 +165,8 @@ final class ChatBridge {
         agy.supply(models: models)
         proto = agy
         controls = proto.controls
+        // 模型列表会清掉当前模型没有的强度；存下清过的值，新开的会话不再带着它启动失败。
+        ChatPreferences.save(cli, controls)
     }
 
     private func apply(_ change: ControlChange, note label: String) {
