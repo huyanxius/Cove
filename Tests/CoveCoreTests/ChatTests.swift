@@ -546,6 +546,19 @@ import Testing
         #expect(agy.receive(result).events == [.turnFinished(error: nil, costUSD: nil, apiDuration: 29.4)])
     }
 
+    /// 样本取自 agy 1.2.14：`result.usage` 是这一轮的量，Cove 累加成本次打开以来的总数。
+    @Test func resultReportsAccumulatedTokens() {
+        var agy = AgyChatProtocol()
+        let first = #"{"event":"result","result":{"status":"SUCCESS","duration_seconds":21.5,"usage":{"input_tokens":36969,"output_tokens":520,"thinking_tokens":408,"cache_read_tokens":12202,"total_tokens":37489}}}"#
+        _ = agy.receive(first)
+        let second = #"{"event":"result","result":{"status":"SUCCESS","duration_seconds":3,"usage":{"input_tokens":1000,"output_tokens":80,"thinking_tokens":20,"cache_read_tokens":0}}}"#
+        guard case let .usage(usage) = agy.receive(second).events.first else { Issue.record("expected usage"); return }
+        #expect(usage.inputTokens == 37969)
+        // output_tokens 已含 thinking_tokens（36969 + 520 == total_tokens 37489），不再另加。
+        #expect(usage.outputTokens == 600)
+        #expect(usage.cacheReadTokens == 12202)
+    }
+
     @Test func thinkingOnlyStepsAddNothing() {
         var agy = AgyChatProtocol()
         let step = #"{"event":"step_update","step_update":{"step_index":2,"state":"DONE","step_type":"agent_response","usage":{"input_tokens":1}}}"#
