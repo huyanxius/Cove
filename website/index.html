@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f7f6f3">
+  <title>Cove — a native macOS harbor for coding agents</title>
+  <meta name="description" content="Cove 为 Claude Code、Codex 和 Antigravity 提供 macOS 原生外壳，把会话、输入与改动审阅放在同一个窗口。项目仍在开发中。">
+  <link rel="icon" href="assets/cove-icon.png">
+  <link rel="preload" href="assets/fonts/italic-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css"><script src="app.js" defer></script>
+</head>
+<body>
+<svg class="icon-defs" aria-hidden="true"><defs><symbol id="out" viewBox="0 0 24 24"><path d="m5 19 14-14M5 5h14v14"/></symbol><symbol id="right" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol><symbol id="folder" viewBox="0 0 24 24"><path d="M3 6h7l2 3h9v11H3Z"/></symbol><symbol id="branch" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="19" r="2"/><path d="M6 7v10m0-4c8 0 12-2 12-5"/></symbol><symbol id="send" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6"/></symbol></defs></svg>
+<a class="skip" href="#why">跳到功能介绍</a>
+<header class="topbar wrap"><a class="brand" href="#" aria-label="Cove 首页"><img src="assets/cove-cup.png" alt="" width="36" height="36"><span>Cove</span></a><nav aria-label="主导航"><a href="#why">为什么是 Cove</a><a href="#start">从源码开始</a><a class="external" href="https://github.com/huyanxius/Cove/tree/feat/m0-shell">GitHub <svg class="icon" aria-hidden="true"><use href="#out"/></svg></a></nav></header>
+<main>
+<section class="hero wrap" aria-labelledby="hero-title">
+  <div class="hero-top"><div class="hero-copy"><p class="eyebrow">A native macOS app <span>In development</span></p><h1 id="hero-title" lang="en">A <em>harbor</em><br>for your agents.</h1><p class="hero-description">熟悉的命令行，顺手的 Mac 窗口。<br>把会话、输入和改动，安放在一处。</p><a class="cove-button cove-button-primary" href="#preview">看看它的工作方式 <svg class="icon" aria-hidden="true"><use href="#right"/></svg></a></div><div class="hero-mark"><img src="assets/cove-cup.png" width="220" height="220" alt="Cove 的蓝色纸杯标识"><p lang="en">Make yourself at home.</p></div></div>
+  <div class="agent-line"><p>带上你自己的 CLI</p><ul aria-label="支持的命令行代理"><li>Claude Code</li><li>Codex</li><li>Antigravity</li></ul><span>macOS 14+</span></div>
+  <figure class="product-study" id="preview" aria-labelledby="preview-caption">
+    <div class="preview-controls"><div role="tablist" aria-label="选择界面示意"><button id="tab-chat" role="tab" aria-selected="true" aria-controls="demo-panel" data-mode="chat">Cove 对话</button><button id="tab-terminal" role="tab" aria-selected="false" aria-controls="demo-panel" tabindex="-1" data-mode="terminal">原生 CLI</button></div><button class="appearance-button" id="appearance" type="button" aria-pressed="false">预览深色</button></div>
+    <div class="app-window" id="app-window">
+      <div class="app-titlebar"><span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span><span class="window-title">Cove <b>/</b> weekend-project</span><span class="window-hint">界面示意</span></div>
+      <div class="app-layout">
+        <aside class="app-sidebar" aria-label="示意会话"><span class="sidebar-label">PROJECTS</span><p class="project-name"><svg class="icon" aria-hidden="true"><use href="#folder"/></svg> weekend-project</p><div class="sample-session selected"><span class="session-status" aria-hidden="true"></span><div>给小项目收个尾<small>Claude Code</small></div></div><div class="sample-session"><span class="session-square" aria-hidden="true"></span><div>整理组件样式<small>Codex</small></div></div><div class="sample-session"><span class="session-square" aria-hidden="true"></span><div>读一读代码<small>Antigravity</small></div></div><p class="sidebar-bottom">同一个项目，接着上次的思路。</p></aside>
+        <div class="app-main" id="demo-panel" role="tabpanel" aria-labelledby="tab-chat" tabindex="0">
+          <div id="chat-example" class="chat-example"><div class="chat-heading"><span class="small-cup" aria-hidden="true"><img src="assets/cove-cup.png" alt="" width="32" height="32"></span><span>给小项目收个尾</span></div><div class="message user-message"><span class="message-author">你</span><p>帮我整理一下侧栏的间距。<br>保留现在的结构，改完一起看看。</p></div><div class="message assistant-message"><span class="message-author">Claude Code</span><p>我会先检查侧栏组件，再把间距收进同一组样式。</p><div class="tool-note"><span class="status-square" aria-hidden="true"></span>阅读 Sidebar.swift</div><p>改动可以在右边逐项查看，<br>也可以直接在 diff 里留下意见。</p></div></div>
+          <div id="terminal-example" class="terminal-example" hidden><div class="terminal-head">~/weekend-project</div><p class="terminal-brand">Claude Code</p><p class="terminal-muted">Your original CLI, in a native window.</p><p><span class="terminal-prompt">❯</span> 整理侧栏的间距，保留现有结构</p><p class="terminal-muted">Reading Sidebar.swift…</p><p><span class="terminal-block" aria-hidden="true"></span> 原版 CLI 进程</p></div>
+          <div class="composer-example"><p>继续这个想法…</p><div><span id="composer-mode">Claude Code</span><span class="composer-send" aria-hidden="true"><svg class="icon"><use href="#send"/></svg></span></div></div>
+          <div class="app-status"><span><i aria-hidden="true"></i>等你看看</span><span>本地项目 · 示例内容</span></div>
+        </div>
+        <aside class="app-inspector" aria-label="示意改动审阅"><span class="sidebar-label">CHANGES</span><p class="inspector-branch"><svg class="icon" aria-hidden="true"><use href="#branch"/></svg> refine-sidebar</p><div class="file-change"><span>Sidebar.swift</span><span class="diff-count">+8 <b>−4</b></span></div><div class="diff-snippet"><p class="line-old"><span>−</span> spacing: 14</p><p class="line-new"><span>+</span> spacing: 16</p></div><p class="inline-comment">这里再留一点呼吸感。</p><div class="inspector-bottom"><span class="sidebar-label">REVIEW</span><p>看改动，留意见。<br>再回到同一个会话。</p></div></aside>
+      </div>
+    </div>
+    <figcaption id="preview-caption"><span>基于当前源码绘制的交互示意，内容为虚构样例，并非实机截图。</span><span>在上方切换两种视图</span></figcaption>
+  </figure>
+</section>
+
+<section class="feature-explorer wrap" id="why" aria-labelledby="why-title"><div class="feature-header"><h2 id="why-title">在一个窗口里工作。</h2><div class="feature-tabs" role="tablist" aria-label="查看 Cove 功能"><button id="feature-tab-sessions" type="button" role="tab" aria-selected="true" aria-controls="feature-sessions" tabindex="0" data-feature="sessions">会话</button><button id="feature-tab-composer" type="button" role="tab" aria-selected="false" aria-controls="feature-composer" tabindex="-1" data-feature="composer">输入</button><button id="feature-tab-changes" type="button" role="tab" aria-selected="false" aria-controls="feature-changes" tabindex="-1" data-feature="changes">Git 与审阅</button></div></div><div class="feature-surface">
+<article id="feature-sessions" class="feature-panel" role="tabpanel" aria-labelledby="feature-tab-sessions" tabindex="0"><div><h3>按项目找到会话。</h3><p>把 Claude Code、Codex 和 Antigravity 的会话放在一个窗口里，回到正在做的项目，继续上一段工作。</p></div><div class="feature-detail"><p>Claude 会话支持本地备份与恢复。</p><a class="cove-button cove-button-light" href="https://github.com/huyanxius/Cove/blob/feat/m0-shell/Sources/CoveCore/Sessions/ExternalSessions.swift">查看会话实现</a></div></article>
+<article id="feature-composer" class="feature-panel" role="tabpanel" aria-labelledby="feature-tab-composer" tabindex="0" hidden><div><h3>用原生输入框表达。</h3><p>中文输入、选区、多行编辑和撤销，按 Mac 上熟悉的方式操作。需要时，可以切回原生终端。</p></div><div class="feature-detail"><p>对话和终端两种视图，保留使用 CLI 的选择。</p><a class="cove-button cove-button-light" href="https://github.com/huyanxius/Cove/blob/feat/m0-shell/Sources/Cove/Views/Composer.swift">查看输入框实现</a></div></article>
+<article id="feature-changes" class="feature-panel" role="tabpanel" aria-labelledby="feature-tab-changes" tabindex="0" hidden><div><h3>看清改动，再继续。</h3><p>在检查器里查看 diff、留下行内评论，检查分支、PR 和 CI 状态，再把审阅意见交回当前会话。</p></div><div class="feature-detail"><p>审阅和当前工作放在一起，减少窗口之间的来回切换。</p><a class="cove-button cove-button-light" href="https://github.com/huyanxius/Cove/blob/feat/m0-shell/Sources/Cove/Views/GitSection.swift">查看 Git 实现</a></div></article></div><p class="feature-caveat">各 CLI 的能力与行为有差异，以开发分支中的实际实现为准。</p></section>
+<section class="cove-build wrap" id="start" aria-labelledby="build-title"><div class="build-introduction"><h2 id="build-title">从源码开始。</h2><p>Cove 仍在开发中。当前源码位于 feat/m0-shell，尚未提供签名、公证的正式安装包。</p><div class="build-actions"><a class="cove-button cove-button-primary" href="https://github.com/huyanxius/Cove/tree/feat/m0-shell">打开开发分支</a><a class="cove-button cove-button-light" href="https://github.com/huyanxius/Cove/blob/feat/m0-shell/docs/ROADMAP.md">开发计划</a></div></div><div class="build-instructions"><p>macOS 14+、Swift 6。请先安装需要使用的 CLI。</p><pre><code>git clone --branch feat/m0-shell --single-branch https://github.com/huyanxius/Cove.git
+cd Cove
+scripts/test.sh
+scripts/bundle.sh</code></pre><button class="cove-button cove-button-primary" type="button" data-copy="git clone --branch feat/m0-shell --single-branch https://github.com/huyanxius/Cove.git&#10;cd Cove&#10;scripts/test.sh&#10;scripts/bundle.sh">复制构建命令</button><p id="copy-status" class="build-copy-status" role="status" aria-live="polite"></p></div></section>
+</main>
+<footer class="wrap"><a class="brand" href="#"><img src="assets/cove-cup.png" alt="" width="30" height="30"><span>Cove</span></a><p>A small harbor, made by <a href="https://github.com/huyanxius">huyanxius</a>.</p><a href="https://github.com/huyanxius/Cove/blob/feat/m0-shell/LICENSE">MIT License</a><p class="footer-note">Claude Code、Codex、Antigravity 的名称归各自所有者。本项目是独立开发的外壳，不代表其官方产品或背书。</p></footer>
+</body></html>
