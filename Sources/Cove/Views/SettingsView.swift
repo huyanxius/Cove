@@ -40,7 +40,7 @@ private struct GeneralSettings: View {
             Picker("界面", selection: $interfaceMode) {
                 ForEach(InterfaceMode.allCases) { Text($0.title).tag($0) }
             }
-            Text(interfaceMode.detail + (interfaceMode == .cove ? "切换会让空闲的 Claude 会话按原 ID 重开，对话不会丢。" : ""))
+            Text(interfaceMode.detail + (interfaceMode == .cove ? "切换会按原会话重开进程；Antigravity 的旧消息暂不在 Cove 对话界面中显示。" : ""))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Toggle("允许跳过权限模式", isOn: $allowBypass)
@@ -158,7 +158,7 @@ private struct ShortcutSettings: View {
         ("⇧⌘C", "复制上一条回复的原文"),
         ("⇧⌘M", "Cove 界面：切换权限模式"),
         ("⇧⌘E", "Cove 界面：思考强度调高一档（到顶回到最低）"),
-        ("esc", "Cove 界面：停止当前这一轮"),
+        ("连按两次 esc", "Cove 界面：停止当前这一轮"),
         ("⌥⌘I", "显示/隐藏检查器"),
         ("⇧⌘W", "关闭当前会话"),
         ("↩ / ⇧↩", "发送 / 换行"),
@@ -185,6 +185,8 @@ private struct AboutSettings: View {
                 .font(.caption).foregroundStyle(.secondary)
             Text("原版 CLI 外面的一层原生外壳：会话、输入、状态与改动。")
                 .font(.callout).foregroundStyle(.secondary)
+            Link("下载新版本与发行说明", destination: URL(string: "https://github.com/huyanxius/Cove/releases/latest")!)
+                .font(.callout)
             Link("github.com/huyanxius/Cove", destination: URL(string: "https://github.com/huyanxius/Cove")!)
                 .font(.callout)
         }
