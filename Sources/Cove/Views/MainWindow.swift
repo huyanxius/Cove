@@ -81,7 +81,7 @@ private struct WelcomeView: View {
                 .font(CoveFont.display(30, weight: .medium))
                 .foregroundStyle(SwiftUI.Color.coveT1)
                 .padding(.top, 20)
-            Text("A harbor for your Claude Code sessions.")
+            Text("A harbor for your coding agents.")
                 .font(CoveFont.display(15))
                 .foregroundStyle(SwiftUI.Color.coveT2)
                 .padding(.top, 6)
