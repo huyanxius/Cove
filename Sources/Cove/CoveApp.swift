@@ -57,6 +57,12 @@ struct CoveApp: App {
                 Button("New Temporary Session") { model.newScratchSession() }
                     .keyboardShortcut("n", modifiers: [.command, .option])
             }
+            CommandGroup(replacing: .help) {
+                Button("Cove 使用指南") { onboarded = false }
+                Link("安装与排错", destination: URL(string: "https://github.com/huyanxius/Cove/blob/main/docs/INSTALL.md")!)
+                Link("下载新版本", destination: URL(string: "https://github.com/huyanxius/Cove/releases/latest")!)
+                Link("反馈问题", destination: URL(string: "https://github.com/huyanxius/Cove/issues/new/choose")!)
+            }
             CommandGroup(replacing: .appSettings) {
                 SettingsLink { Text("Settings…") }
                     .keyboardShortcut(",")
@@ -166,7 +172,7 @@ extension InterfaceMode {
         case .native: "只有终端，键盘直接进 CLI，和在终端 App 里用完全一样。"
         case .nativeWithComposer: "终端照原样显示，下面多一个 Cove 输入框：中文输入、多行编辑、拖文件更顺手。"
         case .composer: "遮住 CLI 自带的输入区和状态栏，只用 Cove 的输入框；弹出选择菜单时会自动露出来。"
-        case .cove: "类似 Claude 桌面版的对话界面：逐字输出、原生权限确认。只对 Claude 会话生效，codex / agy 按上一档显示；TUI 专属的面板（/model 选择器等）在这一档里用不了。"
+        case .cove: "Claude Code、Codex 和 Antigravity 都使用 Cove 的对话界面。Claude 与 Codex 支持权限确认；Antigravity 暂不支持审批或打断。CLI 专属的终端面板需要切回终端档位。"
         }
     }
 }

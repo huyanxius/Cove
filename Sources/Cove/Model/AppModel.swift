@@ -260,7 +260,7 @@ final class AppModel {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Start Session"
-        panel.message = "Choose the folder Claude Code should work in."
+        panel.message = "Choose the folder your coding agent should work in."
         if let cwd = selectedLive?.cwd { panel.directoryURL = URL(fileURLWithPath: cwd) }
         if panel.runModal() == .OK, let url = panel.url { newSession(in: url, inWorktree: inWorktree) }
     }

@@ -9,9 +9,9 @@ Cove 的边界：**跑的永远是原版 CLI 进程，外壳不改 CLI 的行为
 | 原生 CLI | TUI（伪终端） | 只有终端 |
 | 原生 CLI + Cove 输入框 | TUI | 终端 + Cove 输入框，CLI 输入区照常可见 |
 | Cove 输入框替代 CLI 输入框 | TUI | 终端 + Cove 输入框，CLI 输入区被遮住 |
-| Cove 界面 | `claude -p` stream-json（Agent SDK 同款协议） | Cove 自己画的对话、原生权限卡片 |
+| Cove 界面 | `claude -p` stream-json（Agent SDK 同款协议） | Cove 自己画的对话、原生权限卡片（Claude Code / Codex） |
 
-前三档只差显示，就地切换；第四档换了进程，切换时用同一个会话 ID `--resume`，两种进程写的是同一份 JSONL。第四档目前只有 claude，codex / agy 选了它按第三档显示。第四档里没有 TUI 专属的面板（`/model` 选择器、`/config`），这是换来逐字输出和原生权限确认的代价。
+前三档只差显示，就地切换；第四档换了进程，切换时用同一个会话 ID `--resume`，两种进程写的是同一份 JSONL。第四档已接入 Claude Code、Codex 和 Antigravity：分别使用 stream-json、app-server 和 stream-json。Antigravity 仍是实验性接入，暂不支持审批、打断和恢复后的历史展示。第四档里没有 TUI 专属的面板（`/model` 选择器、`/config`），这是换来逐字输出和原生权限确认的代价。
 
 ## 数据来源
 
@@ -53,7 +53,7 @@ Cove 的边界：**跑的永远是原版 CLI 进程，外壳不改 CLI 的行为
 
 **M4 · 守护与管理**：JSONL 归档，抵御 `cleanupPeriodDays` 的静默删除并提示；多账号 profile（每会话一个 `CLAUDE_CONFIG_DIR`）；settings / MCP / CLAUDE.md 生效值只读合并视图；「重启并续上」按钮对付长会话卡顿。
 
-**M5 · 发布**：签名、公证、Sparkle 更新、Homebrew cask。
+**M5 · 发布**：已实现 Apple Silicon 预览版的 DMG / ZIP、校验码和 GitHub 自动发布流程；实际发行以 GitHub Releases 为准。后续：Developer ID 签名、Apple 公证、Sparkle 更新、Homebrew cask。
 
 ## 明确不做
 

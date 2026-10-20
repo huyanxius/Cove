@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag, for example v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  distribute:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Check version tag
+        run: '[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - name: Verify release source
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          test "${TAG#v}" = "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          test -f "docs/releases/$TAG.md"
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-${{ runner.arch }}-swift-${{ hashFiles('Package.resolved', 'Package.swift') }}
+      - name: Test core
+        run: scripts/test.sh
+      - name: Build app
+        env:
+          COVE_ARCH: arm64
+        run: scripts/bundle.sh release
+      - name: Test distribution
+        run: python3 -m unittest discover -s Tests/ReleaseTests -v
+      - name: Package
+        run: scripts/package-release.sh build/Cove.app build/distribution
+      - name: Create draft
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --draft --title "Cove ${TAG#v}" --notes-file "docs/releases/$TAG.md"
+          fi
+      - name: Upload verified assets
+        run: gh release upload "$TAG" build/distribution/*
+      - name: Publish
+        run: gh release edit "$TAG" --draft=false --latest

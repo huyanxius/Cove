@@ -1,0 +1,27 @@
+Cove — a native macOS workspace for your coding agents
+
+INSTALL
+1. Drag Cove.app to Applications.
+2. Open Cove from Applications.
+3. Choose an installed Claude Code or Codex CLI, then open a project folder.
+
+FIRST LAUNCH
+This preview is ad-hoc signed and has not been notarized by Apple.
+If macOS blocks it, attempt to open Cove once, then go to System Settings >
+Privacy & Security > Open Anyway. Follow the system's confirmation steps.
+Apple's instructions: https://support.apple.com/en-us/102445
+
+BEFORE YOU START
+Requires macOS 14 or later. This download is for Apple Silicon.
+Install and sign in to Claude Code or Codex in Terminal first.
+Cove uses that CLI's account, settings and model provider.
+No CLI, model subscription or automatic updater is bundled.
+The current interface is primarily Chinese.
+
+中文
+将 Cove.app 拖到「应用程序」，打开后选择已安装的 CLI，再选择项目文件夹。
+预览版尚未经过 Apple 公证。如被拦截，尝试打开一次后，到
+「系统设置 > 隐私与安全性 > 仍要打开」按系统提示确认。
+请先在终端安装并登录 Claude Code 或 Codex，确认能正常使用。
+
+Documentation and support: https://github.com/huyanxius/Cove
