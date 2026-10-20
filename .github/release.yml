@@ -1,0 +1,6 @@
+changelog:
+  exclude:
+    labels: [duplicate, invalid, wontfix]
+  categories:
+    - title: Changes
+      labels: ['*']
