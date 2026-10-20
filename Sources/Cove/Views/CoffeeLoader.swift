@@ -33,71 +33,75 @@ struct CoffeeLoaderFrame: View {
     static let cycle = 2.8
 
     var body: some View {
-        Canvas { ctx, size in
-            guard let image = Brand.cupMark else { return }
-            let resolved = ctx.resolve(Image(nsImage: image))
-            // 杯子占下方 80%，上方留给蒸汽。
-            let cupHeight = size.height * 0.8
-            let cupWidth = cupHeight * image.size.width / image.size.height
-            let cupRect = CGRect(x: (size.width - cupWidth) / 2, y: size.height - cupHeight, width: cupWidth, height: cupHeight)
+        Canvas { context, size in
+            draw(context, size: size)
+        }
+    }
 
-            let phase = t.truncatingRemainder(dividingBy: Self.cycle) / Self.cycle
-            // 0–0.62 倒满（缓入缓出），0.62–0.82 停住，0.82–1 淡出。
-            let fill = phase < 0.62 ? Self.ease(phase / 0.62) : 1
-            let fade = phase < 0.82 ? 1 : 1 - Self.ease((phase - 0.82) / 0.18)
+    private func draw(_ ctx: GraphicsContext, size: CGSize) {
+        guard let image = Brand.cupMark else { return }
+        let resolved = ctx.resolve(Image(nsImage: image))
+        // 杯子占下方 80%，上方留给蒸汽。
+        let cupHeight = size.height * 0.8
+        let cupWidth = cupHeight * image.size.width / image.size.height
+        let cupRect = CGRect(x: (size.width - cupWidth) / 2, y: size.height - cupHeight, width: cupWidth, height: cupHeight)
 
-            // 虚影。
-            var ghost = ctx
-            ghost.opacity = 0.16
-            ghost.draw(resolved, in: cupRect)
+        let phase = t.truncatingRemainder(dividingBy: Self.cycle) / Self.cycle
+        // 0–0.62 倒满（缓入缓出），0.62–0.82 停住，0.82–1 淡出。
+        let fill: Double = phase < 0.62 ? Self.ease(phase / 0.62) : 1
+        let fade: Double = phase < 0.82 ? 1 : 1 - Self.ease((phase - 0.82) / 0.18)
 
-            // 实色部分：用带波纹的液面裁出来。杯体在图里大约占 8%~90% 的高度。
-            let bottom = cupRect.minY + cupRect.height * 0.9
-            let top = cupRect.minY + cupRect.height * 0.06
-            let level = bottom - (bottom - top) * fill
-            var surface = Path()
-            surface.move(to: CGPoint(x: cupRect.minX - 4, y: cupRect.maxY + 4))
-            let steps = 24
-            for i in 0...steps {
-                let x = cupRect.minX - 4 + (cupRect.width + 8) * CGFloat(i) / CGFloat(steps)
-                let amplitude = cupRect.height * 0.018 * (1 - fill * 0.7)
-                let wave = sin(Double(i) * 0.55 + t * 3.1) + 0.5 * sin(Double(i) * 1.1 - t * 1.7)
-                surface.addLine(to: CGPoint(x: x, y: level + amplitude * CGFloat(wave)))
-            }
-            surface.addLine(to: CGPoint(x: cupRect.maxX + 4, y: cupRect.maxY + 4))
-            surface.closeSubpath()
-            var full = ctx
-            full.opacity = fade
-            full.clip(to: surface)
-            full.draw(resolved, in: cupRect)
+        // 虚影。
+        var ghost = ctx
+        ghost.opacity = 0.16
+        ghost.draw(resolved, in: cupRect)
 
-            // 蒸汽：满杯之后才冒，两缕，模糊的细线。
-            let steam = max(0, min(1, (phase - 0.45) / 0.2)) * fade
-            guard steam > 0 else { return }
-            var wisps = ctx
-            wisps.addFilter(.blur(radius: size.width * 0.02))
-            // 两缕细长的 S 形蒸汽：越往上摆幅越大、越淡，分段画出由浓到淡的渐隐。
-            for i in 0..<2 {
-                let local = (t * 0.32 + Double(i) * 0.5).truncatingRemainder(dividingBy: 1)
-                let baseX = cupRect.midX + (i == 0 ? -1 : 1) * cupRect.width * 0.12
-                let rimY = cupRect.minY + cupRect.height * 0.04
-                let rise = CGFloat(local) * size.height * 0.06
-                let length = size.height * 0.22
-                var previous: CGPoint?
-                for step in 0...24 {
-                    let k = CGFloat(step) / 24
-                    let sway = CGFloat(sin(Double(k) * .pi * 1.3 + t * 0.9 + Double(i) * 2.2)) * cupRect.width * 0.07 * (0.3 + k)
-                    let point = CGPoint(x: baseX + sway, y: rimY - rise - k * length)
-                    if let previous {
-                        var segment = Path()
-                        segment.move(to: previous)
-                        segment.addLine(to: point)
-                        let alpha = Double(1 - k) * sin(local * .pi) * 0.5 * steam
-                        wisps.stroke(segment, with: .color(SwiftUI.Color.coveT3.opacity(alpha)),
-                                     style: StrokeStyle(lineWidth: size.width * (0.02 + 0.02 * k), lineCap: .round))
-                    }
-                    previous = point
+        // 实色部分：用带波纹的液面裁出来。杯体在图里大约占 8%~90% 的高度。
+        let bottom = cupRect.minY + cupRect.height * 0.9
+        let top = cupRect.minY + cupRect.height * 0.06
+        let level = bottom - (bottom - top) * fill
+        var surface = Path()
+        surface.move(to: CGPoint(x: cupRect.minX - 4, y: cupRect.maxY + 4))
+        let steps = 24
+        for i in 0...steps {
+            let x = cupRect.minX - 4 + (cupRect.width + 8) * CGFloat(i) / CGFloat(steps)
+            let amplitude = cupRect.height * 0.018 * (1 - fill * 0.7)
+            let wave = sin(Double(i) * 0.55 + t * 3.1) + 0.5 * sin(Double(i) * 1.1 - t * 1.7)
+            surface.addLine(to: CGPoint(x: x, y: level + amplitude * CGFloat(wave)))
+        }
+        surface.addLine(to: CGPoint(x: cupRect.maxX + 4, y: cupRect.maxY + 4))
+        surface.closeSubpath()
+        var full = ctx
+        full.opacity = fade
+        full.clip(to: surface)
+        full.draw(resolved, in: cupRect)
+
+        // 蒸汽：满杯之后才冒，两缕，模糊的细线。
+        let steam = max(0, min(1, (phase - 0.45) / 0.2)) * fade
+        guard steam > 0 else { return }
+        var wisps = ctx
+        wisps.addFilter(.blur(radius: size.width * 0.02))
+        // 两缕细长的 S 形蒸汽：越往上摆幅越大、越淡，分段画出由浓到淡的渐隐。
+        for i in 0..<2 {
+            let local = (t * 0.32 + Double(i) * 0.5).truncatingRemainder(dividingBy: 1)
+            let baseX = cupRect.midX + (i == 0 ? -1 : 1) * cupRect.width * 0.12
+            let rimY = cupRect.minY + cupRect.height * 0.04
+            let rise = CGFloat(local) * size.height * 0.06
+            let length = size.height * 0.22
+            var previous: CGPoint?
+            for step in 0...24 {
+                let k = CGFloat(step) / 24
+                let sway = CGFloat(sin(Double(k) * .pi * 1.3 + t * 0.9 + Double(i) * 2.2)) * cupRect.width * 0.07 * (0.3 + k)
+                let point = CGPoint(x: baseX + sway, y: rimY - rise - k * length)
+                if let previous {
+                    var segment = Path()
+                    segment.move(to: previous)
+                    segment.addLine(to: point)
+                    let alpha = Double(1 - k) * sin(local * .pi) * 0.5 * steam
+                    wisps.stroke(segment, with: .color(SwiftUI.Color.coveT3.opacity(alpha)),
+                                 style: StrokeStyle(lineWidth: size.width * (0.02 + 0.02 * k), lineCap: .round))
                 }
+                previous = point
             }
         }
     }
