@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-${{ runner.arch }}-swift-${{ hashFiles('Package.resolved', 'Package.swift') }}
+      - name: Test core
+        run: scripts/test.sh
+      - name: Build app
+        env:
+          COVE_ARCH: arm64
+        run: scripts/bundle.sh release
+      - name: Test distribution
+        run: python3 -m unittest discover -s Tests/ReleaseTests -v
+      - name: Package preview
+        run: scripts/package-release.sh build/Cove.app build/distribution
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cove-macOS-arm64
+          path: build/distribution/*
+          if-no-files-found: error
