@@ -242,7 +242,7 @@ const sessions = [
   },
 ];
 
-let current = 0, mode = 'term', composerOn = false, inspectorOpen = false, approvedOnce = false;
+let current = 0, mode = 'term', composerOn = false, inspectorOpen = true, approvedOnce = false;
 const win = $('#win'), listEl = $('#w-sessions'), chatEl = $('#w-chat'), scrollEl = $('#w-scroll');
 const termEl = $('#w-term'), logEl = $('#tty-log'), inputEl = $('#tty-input');
 const winCrab = makeCrab($('#w-crab'), 'idle');
@@ -551,7 +551,7 @@ const narrow = matchMedia('(max-width: 760px)');
 function paintHint() {
   const where = narrow.matches ? '上面' : '左边';
   $('#stage-hint').textContent = approvedOnce
-    ? '右上角可以切到「对话」，或者打开检查器看任务、改动和用量。'
+    ? '右上角可以加一个输入框，或者切到「对话」看看 Cove 的界面。'
     : `终端里就是原版 CLI。点${where}的会话切换，Codex 那条正等你在它自己的选项里批准。`;
 }
 narrow.addEventListener('change', paintHint);
@@ -565,6 +565,7 @@ $$('[data-goto]').forEach(b => b.addEventListener('click', () => {
 }));
 
 render();
+winCrab.resize();
 let started = false;
 new IntersectionObserver(([e], io) => {
   if (!e.isIntersecting || started) return;

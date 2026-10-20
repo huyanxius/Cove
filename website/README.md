@@ -22,3 +22,11 @@ python3 -m http.server 8000 --bind 127.0.0.1
 ## Assets and licenses
 
 `cove-cup.png` and `cove-icon.png` are unmodified copies of `Resources/CupMark.png` and `docs/assets/icon.png`. Newsreader is bundled under the SIL OFL 1.1 (`assets/fonts/Newsreader-OFL.txt`). Website source is covered by the repository's MIT license.
+
+## Publish
+
+The Website workflow validates website changes in pull requests and publishes the
+`website/` directory from `main` to GitHub Pages. In repository Settings → Pages,
+select GitHub Actions as the source before the first deployment. The intended
+public URL is https://huyanxius.github.io/Cove/. This workflow does not build or
+package the Mac app.

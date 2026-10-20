@@ -9,7 +9,12 @@
   <meta name="theme-color" content="#262624" media="(prefers-color-scheme: dark)">
   <meta property="og:title" content="Cove — A harbor for your agents.">
   <meta property="og:description" content="给 Claude Code 和 Codex 一个 Mac 原生的工作台。">
-  <meta property="og:image" content="assets/cove-icon.png">
+  <link rel="canonical" href="https://huyanxius.github.io/Cove/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://huyanxius.github.io/Cove/">
+  <meta property="og:image" content="https://huyanxius.github.io/Cove/assets/cove-icon.png">
+  <meta property="og:image:alt" content="Cove — a native macOS workspace for Claude Code and Codex">
+  <meta name="twitter:card" content="summary">
   <link rel="icon" href="assets/cove-icon.png">
   <link rel="preload" href="assets/fonts/newsreader-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
@@ -59,7 +64,7 @@
   </section>
 
   <section class="stage" aria-label="Cove 窗口演示">
-    <div class="win" id="win">
+    <div class="win insp-open" id="win">
       <div class="win-bar">
         <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
         <div class="win-title"><span id="w-title"></span><span class="chip" id="w-agent"></span><span class="pxstep" id="w-step" aria-hidden="true"><i></i><i></i><i></i></span></div>
